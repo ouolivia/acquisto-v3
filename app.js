@@ -10,6 +10,8 @@ let modal = null;
 let lastRenderedScreen = null;
 let detailSearchTerm = '';
 let colorCategory = 'number';
+let colorManageMode = false;
+let suppressColorClickUntil = 0;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -122,16 +124,15 @@ function entryView(){
   return `${header('采购录入',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="card photo-capture-card">
       <button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button>
-      <div class="photo-capture-actions"><div><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已确认；需要更换时点击左侧图片。':'点击左侧图片拍照，确认照片后再录入商品数据。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden></div>
+      <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'已确认；点击照片可重拍。':'点击照片拍摄并确认。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+        <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
+        <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
+        <div class="inside-field"><span>卖价</span><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"></div></div>
+        <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${draft.unit==='pack'?'active':''}" data-unit="pack">包</button></div>
+        ${draft.unit==='pack'?`<div class="inside-field pack-size-field"><span>每包件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
+      </div>
     </section>
-    <section class="card stack entry-card">
-      <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
-      <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
-      <div class="inside-field"><span>卖价</span><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"></div></div>
-      <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${draft.unit==='pack'?'active':''}" data-unit="pack">包</button></div>
-      ${draft.unit==='pack'?`<div class="inside-field pack-size-field"><span>每包件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
-    </section>
-    <section class="card"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><button class="color-manage-btn" data-action="sort-colors" aria-label="调整颜色顺序" title="调整颜色顺序">${icon('sort')}</button><button class="link-btn" data-action="add-color">新增</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button>`).join('')}</div></section>
+    <section class="card"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div>${colorManageMode?`<button class="color-done-btn" data-action="finish-color-manage">完成整理</button>`:''}<button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable ${colorManageMode?'managing':''}">${colorManageMode?visibleColors.map(c=>`<div class="chip color-manage-chip ${draft.colors.includes(c)?'active':''}" data-drag-color="${esc(c)}"><span>${esc(c)}</span><button type="button" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join(''):visibleColors.map(c=>`<button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button>`).join('')}</div>${colorManageMode?'<p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p>':'<p class="color-longpress-hint">长按颜色可整理顺序或删除。</p>'}</section>
     <section class="card"><div class="section-head"><h2>数量与门店</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
       <div class="qty-allocate-row"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${draft.unit==='pack'?'text':'number'}" ${draft.unit==='pack'?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='pack'?'包':'件'}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div><button class="btn btn-primary" data-action="allocate">${draft.editIds.length?'保存修改':'分配到所选门店'}</button></div>
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
@@ -188,7 +189,35 @@ function bind(){
   document.querySelectorAll('[data-unit]').forEach(x=>x.onclick=()=>{syncDraft();draft.unit=x.dataset.unit;const q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<1)draft.qty='1';else if(draft.unit==='piece')draft.qty=String(Math.max(1,Math.round(q)));render();});
   document.querySelectorAll('[data-color-category]').forEach(x=>x.onclick=()=>{syncDraft();colorCategory=x.dataset.colorCategory;render();});
   document.querySelectorAll('[data-color]').forEach(x=>{
-    x.onclick=()=>{syncDraft();const c=x.dataset.color;draft.colors=draft.colors.includes(c)?draft.colors.filter(v=>v!==c):[...draft.colors,c];render();};
+    x.onclick=()=>{if(Date.now()<suppressColorClickUntil)return;syncDraft();const c=x.dataset.color;draft.colors=draft.colors.includes(c)?draft.colors.filter(v=>v!==c):[...draft.colors,c];render();};
+    let timer=null,start=null;
+    const cancelHold=()=>{clearTimeout(timer);timer=null;};
+    x.onpointerdown=e=>{if(typeof e.button==='number'&&e.button!==0)return;start={x:e.clientX,y:e.clientY};timer=setTimeout(()=>{suppressColorClickUntil=Date.now()+700;syncDraft();colorManageMode=true;render();toast('已进入颜色整理：拖动排序，点击 × 删除');},520);};
+    x.onpointermove=e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>9)cancelHold();};
+    x.onpointerup=cancelHold;x.onpointercancel=cancelHold;x.onpointerleave=cancelHold;
+  });
+  document.querySelectorAll('[data-delete-color]').forEach(x=>x.onclick=e=>{e.stopPropagation();syncDraft();const color=x.dataset.deleteColor;state.colors=state.colors.filter(c=>c!==color);draft.colors=draft.colors.filter(c=>c!==color);save();render();toast(`已删除预设颜色 ${color}`);});
+  document.querySelectorAll('[data-drag-color]').forEach(x=>{
+    let dragging=false,start=null;
+    const finish=()=>{
+      if(!start)return;
+      const container=x.closest('.color-sortable'),visibleSet=new Set([...container.querySelectorAll('[data-drag-color]')].map(item=>item.dataset.dragColor)),displayed=[...container.querySelectorAll('[data-drag-color]')].map(item=>item.dataset.dragColor);
+      state.colors=state.colors.map(color=>visibleSet.has(color)?displayed.shift():color);
+      x.classList.remove('dragging');x.style.pointerEvents='';start=null;dragging=false;save();render();
+    };
+    x.onpointerdown=e=>{if(e.target.closest('[data-delete-color]'))return;start={x:e.clientX,y:e.clientY};x.setPointerCapture?.(e.pointerId);};
+    x.onpointermove=e=>{
+      if(!start)return;
+      if(!dragging&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<6)return;
+      dragging=true;x.classList.add('dragging');x.style.pointerEvents='none';
+      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('[data-drag-color]');
+      x.style.pointerEvents='';
+      if(!target||target===x||target.parentElement!==x.parentElement)return;
+      const rect=target.getBoundingClientRect(),before=e.clientY<rect.top+rect.height/2||(Math.abs(e.clientY-(rect.top+rect.height/2))<rect.height*.34&&e.clientX<rect.left+rect.width/2);
+      target.parentElement.insertBefore(x,before?target:target.nextSibling);
+    };
+    x.onpointerup=e=>{try{x.releasePointerCapture?.(e.pointerId);}catch(error){}finish();};
+    x.onpointercancel=finish;
   });
   document.querySelectorAll('[data-summary-sort]').forEach(x=>x.onclick=()=>{const key=x.dataset.summarySort;modal.sortDir=modal.sortKey===key&&modal.sortDir==='asc'?'desc':'asc';modal.sortKey=key;render();});
   document.querySelectorAll('[data-sort-color]').forEach(x=>{
@@ -217,6 +246,8 @@ function bind(){
   document.querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>action(x.dataset.action));
   const photoInput=document.querySelector('#photoInput');
   if(photoInput)photoInput.onchange=()=>{const file=photoInput.files?.[0];if(file)openPhotoCrop(file);photoInput.value='';};
+  const quickColor=document.querySelector('#quickColor');
+  if(quickColor)quickColor.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();action('quick-add-color');}};
   const cropStage=document.querySelector('#photoCropStage'),cropImage=document.querySelector('#photoCropImage');
   if(cropStage&&cropImage){
     const applyCropTransform=()=>{cropImage.style.transform=`translate(${modal.crop.x}px,${modal.crop.y}px) scale(${modal.crop.zoom})`;};
@@ -272,9 +303,9 @@ async function completeCurrentModel(){
 }
 
 async function action(name){
-  if(name==='start'){const supplier=document.querySelector('#supplier').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
-  if(name==='back-home'||name==='home-from-details'){persistDraftNote();releaseDraftPhoto();screen='home';activeBatchId=null;render();}
-  if(name==='details'){const lines=persistDraftNote();if(draft.model&&lines.length){try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}catch(error){}}screen='details';render();}
+  if(name==='start'){const supplier=document.querySelector('#supplier').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;colorManageMode=false;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
+  if(name==='back-home'||name==='home-from-details'){persistDraftNote();colorManageMode=false;releaseDraftPhoto();screen='home';activeBatchId=null;render();}
+  if(name==='details'){const lines=persistDraftNote();if(draft.model&&lines.length){try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}catch(error){}}colorManageMode=false;screen='details';render();}
   if(name==='continue'){screen='entry';render();}
   if(name==='take-photo'){document.querySelector('#photoInput')?.click();}
   if(name==='retake-photo'){if(modal?.type==='photo-crop'&&modal.sourceUrl)URL.revokeObjectURL(modal.sourceUrl);modal=null;render();setTimeout(()=>document.querySelector('#photoInput')?.click(),0);}
@@ -285,6 +316,8 @@ async function action(name){
   if(name==='sort-colors'){syncDraft();modal={type:'sort-colors',order:[...state.colors],selected:null};render();}
   if(name==='close-modal'){if(modal?.type==='photo-crop'&&modal.sourceUrl)URL.revokeObjectURL(modal.sourceUrl);revokeGalleryUrls();modal=null;render();}
   if(name==='save-color'){const c=document.querySelector('#newColor').value.trim();if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isNumericColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
+  if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=input?.value.trim();if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isNumericColor(c)?'number':'text';save();render();toast(`已增加并选中 ${c}`);}
+  if(name==='finish-color-manage'){syncDraft();colorManageMode=false;render();toast('颜色顺序已保存');}
   if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);}));save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
   if(name==='save-color-order'){if(!modal?.order?.length)return toast('没有可保存的颜色');state.colors=[...modal.order];save();modal=null;render();toast('颜色顺序已保存');}
   if(name==='toggle-stores'){syncDraft();const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
@@ -509,6 +542,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=7',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=8',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();

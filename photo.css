@@ -1,12 +1,18 @@
-.photo-capture-card{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:center}
+.photo-capture-card{display:grid;grid-template-columns:136px minmax(0,1fr);gap:14px;align-items:start}
 .photo-capture-preview{position:relative;aspect-ratio:3/4;border:1px solid var(--line);border-radius:16px;background:#f4f4f4;overflow:hidden;display:grid;place-items:center;color:var(--muted)}
 .photo-capture-preview{padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .photo-capture-preview:focus-visible{outline:3px solid #111;outline-offset:3px}
 .photo-capture-preview img{width:100%;height:100%;object-fit:cover}
 .photo-capture-preview svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.7}
-.photo-capture-actions{display:grid;gap:9px}
-.photo-capture-actions h2{font-size:18px;margin:0}
-.photo-capture-actions p{font-size:12px;color:var(--muted);margin:0;line-height:1.45}
+.photo-entry-panel{display:grid;min-width:0;gap:7px}
+.photo-entry-heading{display:flex;align-items:baseline;gap:9px;min-width:0}
+.photo-entry-heading h2{flex:0 0 auto;margin:0;font-size:16px}
+.photo-entry-heading p{min-width:0;margin:0;overflow:hidden;color:var(--muted);font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.photo-entry-panel .grid2{gap:7px}
+.photo-entry-panel .inside-field{min-height:42px;padding:0 9px}
+.photo-entry-panel .inside-field span{margin-right:7px}
+.photo-entry-panel .inside-field input{height:39px}
+.photo-entry-panel .choice{min-height:39px;padding:7px}
 .photo-crop-modal{width:min(92vw,560px)}
 .photo-crop-stage{position:relative;width:min(100%,420px);margin:0 auto;aspect-ratio:3/4;overflow:hidden;border-radius:18px;background:#111;touch-action:none}
 .photo-crop-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:center;user-select:none;-webkit-user-drag:none;pointer-events:none}
@@ -29,8 +35,35 @@
 .photo-gallery-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:8px}
 .detail-toolbar{grid-template-columns:repeat(2,1fr)!important}
 .detail-toolbar .btn{min-width:0}
+.color-quick-add{display:flex;width:132px;height:34px;overflow:hidden;border:1px solid #e7e7e9;border-radius:8px;background:#f7f7f8}
+.color-quick-add:focus-within{border-color:#aaa;background:#fff;box-shadow:0 0 0 3px rgba(0,0,0,.045)}
+.color-quick-add input{width:0;min-width:0;flex:1;padding:0 5px 0 9px;border:0;outline:0;background:transparent;color:#111;font-size:16px}
+.color-quick-add input::placeholder{color:#aaa}
+.color-quick-add button{display:grid;flex:0 0 32px;place-items:center;background:#ededee;color:#333;font-size:18px}
+.color-done-btn{min-height:34px;padding:6px 9px;border-radius:8px;background:#111;color:#fff;font-size:10px;font-weight:750}
+.color-longpress-hint,.color-manage-hint{margin:8px 1px 0;color:#aaa;font-size:9px;line-height:1.4}
+.color-sortable .chip{touch-action:none}
+.color-sortable.managing{align-items:flex-start}
+.color-manage-chip{position:relative;display:inline-flex!important;min-height:38px!important;align-items:center;gap:7px;padding:6px 6px 6px 11px!important;cursor:grab;touch-action:none!important}
+.color-manage-chip>span{pointer-events:none}
+.color-manage-chip>button{display:grid;width:24px;height:24px;place-items:center;border-radius:6px;background:#e5e5e7;color:#666;font-size:16px;line-height:1}
+.color-manage-chip.active>button{background:rgba(255,255,255,.2);color:#fff}
+.color-manage-chip.dragging{z-index:5;cursor:grabbing;opacity:.62;transform:scale(1.04);box-shadow:0 9px 22px rgba(0,0,0,.18)}
+.compact-action-card .btn{min-height:52px;font-size:17px!important;font-weight:850!important}
 @media(max-width:560px){
-  .photo-capture-card{grid-template-columns:92px 1fr}
+  .photo-capture-card{grid-template-columns:96px minmax(0,1fr);gap:10px}
+  .photo-entry-heading{display:block}
+  .photo-entry-heading h2{font-size:14px}
+  .photo-entry-heading p{margin-top:2px;font-size:9px}
+  .photo-entry-panel{gap:6px}
+  .photo-entry-panel .inside-field{padding:0 7px}
+  .photo-entry-panel .inside-field span{margin-right:5px;font-size:9px}
+  .color-quick-add{width:118px}
   .photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .photo-gallery-actions{grid-template-columns:1fr}
+}
+@media(max-width:370px){
+  .photo-capture-card{grid-template-columns:84px minmax(0,1fr);gap:8px}
+  .photo-entry-heading p{display:none}
+  .color-quick-add{width:108px}
 }
