@@ -132,7 +132,7 @@ function entryView(){
         ${draft.unit==='pack'?`<div class="inside-field pack-size-field"><span>每包件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
       </div>
     </section>
-    <section class="card"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div>${colorManageMode?`<button class="color-done-btn" data-action="finish-color-manage">完成整理</button>`:''}<button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable ${colorManageMode?'managing':''}">${colorManageMode?visibleColors.map(c=>`<div class="chip color-manage-chip ${draft.colors.includes(c)?'active':''}" data-drag-color="${esc(c)}"><span>${esc(c)}</span><button type="button" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join(''):visibleColors.map(c=>`<button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button>`).join('')}</div>${colorManageMode?'<p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p>':'<p class="color-longpress-hint">长按颜色可整理顺序或删除。</p>'}</section>
+    <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
     <section class="card"><div class="section-head"><h2>数量与门店</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
       <div class="qty-allocate-row"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${draft.unit==='pack'?'text':'number'}" ${draft.unit==='pack'?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='pack'?'包':'件'}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div><button class="btn btn-primary" data-action="allocate">${draft.editIds.length?'保存修改':'分配到所选门店'}</button></div>
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
@@ -190,25 +190,34 @@ function bind(){
   document.querySelectorAll('[data-color-category]').forEach(x=>x.onclick=()=>{syncDraft();colorCategory=x.dataset.colorCategory;render();});
   document.querySelectorAll('[data-color]').forEach(x=>{
     x.onclick=()=>{if(Date.now()<suppressColorClickUntil)return;syncDraft();const c=x.dataset.color;draft.colors=draft.colors.includes(c)?draft.colors.filter(v=>v!==c):[...draft.colors,c];render();};
-    let timer=null,start=null;
-    const cancelHold=()=>{clearTimeout(timer);timer=null;};
-    x.onpointerdown=e=>{if(typeof e.button==='number'&&e.button!==0)return;start={x:e.clientX,y:e.clientY};timer=setTimeout(()=>{suppressColorClickUntil=Date.now()+700;syncDraft();colorManageMode=true;render();toast('已进入颜色整理：拖动排序，点击 × 删除');},520);};
-    x.onpointermove=e=>{if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>9)cancelHold();};
-    x.onpointerup=cancelHold;x.onpointercancel=cancelHold;x.onpointerleave=cancelHold;
   });
   document.querySelectorAll('[data-delete-color]').forEach(x=>x.onclick=e=>{e.stopPropagation();syncDraft();const color=x.dataset.deleteColor;state.colors=state.colors.filter(c=>c!==color);draft.colors=draft.colors.filter(c=>c!==color);save();render();toast(`已删除预设颜色 ${color}`);});
   document.querySelectorAll('[data-drag-color]').forEach(x=>{
-    let dragging=false,start=null;
+    let dragging=false,start=null,timer=null,pointerId=null;
+    const enterManage=()=>{
+      suppressColorClickUntil=Date.now()+800;syncDraft();colorManageMode=true;
+      const card=x.closest('.color-card');card?.classList.add('color-managing');
+      try{x.setPointerCapture?.(pointerId);}catch(error){}
+      toast('颜色整理：继续拖动排序，点击 × 删除');
+    };
     const finish=()=>{
       if(!start)return;
       const container=x.closest('.color-sortable'),visibleSet=new Set([...container.querySelectorAll('[data-drag-color]')].map(item=>item.dataset.dragColor)),displayed=[...container.querySelectorAll('[data-drag-color]')].map(item=>item.dataset.dragColor);
       state.colors=state.colors.map(color=>visibleSet.has(color)?displayed.shift():color);
-      x.classList.remove('dragging');x.style.pointerEvents='';start=null;dragging=false;save();render();
+      clearTimeout(timer);x.classList.remove('dragging');x.style.pointerEvents='';start=null;dragging=false;pointerId=null;save();
+      if(colorManageMode)render();
     };
-    x.onpointerdown=e=>{if(e.target.closest('[data-delete-color]'))return;start={x:e.clientX,y:e.clientY};x.setPointerCapture?.(e.pointerId);};
+    x.onpointerdown=e=>{
+      if(e.target.closest('[data-delete-color]')||(typeof e.button==='number'&&e.button!==0))return;
+      start={x:e.clientX,y:e.clientY};pointerId=e.pointerId;
+      if(colorManageMode){try{x.setPointerCapture?.(e.pointerId);}catch(error){}}
+      else timer=setTimeout(enterManage,520);
+    };
     x.onpointermove=e=>{
       if(!start)return;
-      if(!dragging&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<6)return;
+      const moved=Math.hypot(e.clientX-start.x,e.clientY-start.y);
+      if(!colorManageMode){if(moved>9){clearTimeout(timer);timer=null;}return;}
+      if(!dragging&&moved<6)return;
       dragging=true;x.classList.add('dragging');x.style.pointerEvents='none';
       const target=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('[data-drag-color]');
       x.style.pointerEvents='';
@@ -216,7 +225,7 @@ function bind(){
       const rect=target.getBoundingClientRect(),before=e.clientY<rect.top+rect.height/2||(Math.abs(e.clientY-(rect.top+rect.height/2))<rect.height*.34&&e.clientX<rect.left+rect.width/2);
       target.parentElement.insertBefore(x,before?target:target.nextSibling);
     };
-    x.onpointerup=e=>{try{x.releasePointerCapture?.(e.pointerId);}catch(error){}finish();};
+    x.onpointerup=e=>{clearTimeout(timer);try{x.releasePointerCapture?.(e.pointerId);}catch(error){}finish();};
     x.onpointercancel=finish;
   });
   document.querySelectorAll('[data-summary-sort]').forEach(x=>x.onclick=()=>{const key=x.dataset.summarySort;modal.sortDir=modal.sortKey===key&&modal.sortDir==='asc'?'desc':'asc';modal.sortKey=key;render();});
@@ -542,6 +551,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=8',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=9',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();

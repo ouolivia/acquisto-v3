@@ -40,15 +40,20 @@
 .color-quick-add input{width:0;min-width:0;flex:1;padding:0 5px 0 9px;border:0;outline:0;background:transparent;color:#111;font-size:16px}
 .color-quick-add input::placeholder{color:#aaa}
 .color-quick-add button{display:grid;flex:0 0 32px;place-items:center;background:#ededee;color:#333;font-size:18px}
-.color-done-btn{min-height:34px;padding:6px 9px;border-radius:8px;background:#111;color:#fff;font-size:10px;font-weight:750}
+.color-done-btn{display:none;min-height:34px;padding:6px 9px;border-radius:8px;background:#111;color:#fff;font-size:10px;font-weight:750}
 .color-longpress-hint,.color-manage-hint{margin:8px 1px 0;color:#aaa;font-size:9px;line-height:1.4}
-.color-sortable .chip{touch-action:none}
-.color-sortable.managing{align-items:flex-start}
-.color-manage-chip{position:relative;display:inline-flex!important;min-height:38px!important;align-items:center;gap:7px;padding:6px 6px 6px 11px!important;cursor:grab;touch-action:none!important}
-.color-manage-chip>span{pointer-events:none}
-.color-manage-chip>button{display:grid;width:24px;height:24px;place-items:center;border-radius:6px;background:#e5e5e7;color:#666;font-size:16px;line-height:1}
-.color-manage-chip.active>button{background:rgba(255,255,255,.2);color:#fff}
-.color-manage-chip.dragging{z-index:5;cursor:grabbing;opacity:.62;transform:scale(1.04);box-shadow:0 9px 22px rgba(0,0,0,.18)}
+.color-manage-hint{display:none}
+.color-chip-shell{position:relative;display:inline-flex;align-items:center;gap:4px;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.color-chip-shell .chip{touch-action:none}
+.color-delete-btn{display:none;width:24px;height:24px;place-items:center;border-radius:6px;background:#e5e5e7;color:#666;font-size:16px;line-height:1}
+.color-card.color-managing .color-done-btn{display:block}
+.color-card.color-managing .color-longpress-hint{display:none}
+.color-card.color-managing .color-manage-hint{display:block}
+.color-card.color-managing .color-chip-shell{min-height:38px;padding:3px 4px 3px 3px;border:1px solid #ededee;border-radius:8px;background:#fafafa;cursor:grab}
+.color-card.color-managing .color-chip-shell .chip{min-height:30px;padding:5px 8px;border:0;background:transparent}
+.color-card.color-managing .color-chip-shell .chip.active{background:#111;color:#fff}
+.color-card.color-managing .color-delete-btn{display:grid}
+.color-chip-shell.dragging{z-index:5;cursor:grabbing!important;opacity:.62;transform:scale(1.04);box-shadow:0 9px 22px rgba(0,0,0,.18)}
 .compact-action-card .btn{min-height:52px;font-size:17px!important;font-weight:850!important}
 @media(max-width:560px){
   .photo-capture-card{grid-template-columns:96px minmax(0,1fr);gap:10px}
