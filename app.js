@@ -120,8 +120,8 @@ function entryView(){
   const previewStores=[...previewLines.reduce((map,l)=>{if(!map.has(l.store))map.set(l.store,{store:l.store,lines:[],ids:[]});const g=map.get(l.store);g.lines.push(l);g.ids.push(l.id);return map;},new Map()).values()];
   return `${header('采购录入',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="card photo-capture-card">
-      <div class="photo-capture-preview">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</div>
-      <div class="photo-capture-actions"><div><h2>商品照片 *</h2><p>一个型号保存一张照片，提交前可裁剪或重新拍摄。</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden><button class="btn ${draft.photoBlob||draft.rawPhotoFile?'btn-light':'btn-primary'}" data-action="take-photo">${draft.photoBlob||draft.rawPhotoFile?'重新拍照':'拍照'}</button></div>
+      <button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button>
+      <div class="photo-capture-actions"><div><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已确认；需要更换时点击左侧图片。':'点击左侧图片拍照，确认照片后再录入商品数据。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden></div>
     </section>
     <section class="card stack entry-card">
       <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
@@ -215,7 +215,7 @@ function bind(){
   document.querySelectorAll('[data-photo-model]').forEach(x=>x.onclick=()=>{const model=x.dataset.photoModel;if(modal.selected.has(model))modal.selected.delete(model);else modal.selected.add(model);render();});
   document.querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>action(x.dataset.action));
   const photoInput=document.querySelector('#photoInput');
-  if(photoInput)photoInput.onchange=()=>{const file=photoInput.files?.[0];if(file){if(draft.editIds.length)openPhotoCrop(file);else{setRawPhoto(file);render();toast('照片已拍摄，提交型号时可裁剪');}}photoInput.value='';};
+  if(photoInput)photoInput.onchange=()=>{const file=photoInput.files?.[0];if(file)openPhotoCrop(file);photoInput.value='';};
   const cropStage=document.querySelector('#photoCropStage'),cropImage=document.querySelector('#photoCropImage');
   if(cropStage&&cropImage){
     const applyCropTransform=()=>{cropImage.style.transform=`translate(${modal.crop.x}px,${modal.crop.y}px) scale(${modal.crop.zoom})`;};
@@ -277,7 +277,7 @@ async function action(name){
   if(name==='continue'){screen='entry';render();}
   if(name==='take-photo'){document.querySelector('#photoInput')?.click();}
   if(name==='retake-photo'){if(modal?.type==='photo-crop'&&modal.sourceUrl)URL.revokeObjectURL(modal.sourceUrl);modal=null;render();setTimeout(()=>document.querySelector('#photoInput')?.click(),0);}
-  if(name==='save-photo-crop'){const stage=document.querySelector('#photoCropStage');if(!stage)return;try{const rect=stage.getBoundingClientRect(),finishAfterCrop=modal.finishAfterCrop,blob=await V3Photos.crop(modal.file,{...modal.crop,frameW:rect.width,frameH:rect.height});URL.revokeObjectURL(modal.sourceUrl);setDraftPhoto(blob);modal=null;if(finishAfterCrop)await completeCurrentModel();else{render();toast('照片已裁剪');}}catch(error){toast(error.message||'照片裁剪失败');}}
+  if(name==='save-photo-crop'){const stage=document.querySelector('#photoCropStage');if(!stage)return;try{const rect=stage.getBoundingClientRect(),finishAfterCrop=modal.finishAfterCrop,blob=await V3Photos.crop(modal.file,{...modal.crop,frameW:rect.width,frameH:rect.height});URL.revokeObjectURL(modal.sourceUrl);setDraftPhoto(blob);modal=null;if(finishAfterCrop)await completeCurrentModel();else{render();setTimeout(()=>document.querySelector('#model')?.focus(),0);toast('照片已确认，可以录入商品数据');}}catch(error){toast(error.message||'照片裁剪失败');}}
   if(name==='add-color'){syncDraft();modal={type:'color'};render();setTimeout(()=>document.querySelector('#newColor')?.focus(),0);}
   if(name==='clear-colors'){syncDraft();draft.colors=[];render();toast('已取消颜色选择');}
   if(name==='edit-colors'){syncDraft();modal={type:'edit-colors'};render();setTimeout(()=>document.querySelector('[data-color-original]')?.focus(),0);}
@@ -287,7 +287,27 @@ async function action(name){
   if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);}));save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
   if(name==='save-color-order'){if(!modal?.order?.length)return toast('没有可保存的颜色');state.colors=[...modal.order];save();modal=null;render();toast('颜色顺序已保存');}
   if(name==='toggle-stores'){syncDraft();const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
-  if(name==='allocate'){const err=validDraft();if(err)return toast(err);draft.sale=normalizeSale(draft.sale);const quantity=parseQuantity(draft.qty,draft.unit);if(draft.unit==='pack'&&quantity===.5)draft.qty='半';const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob;b.lines.forEach(line=>{if(line.model===draft.model)line.note=draft.note;});if(editing){const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));}for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model:draft.model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:draft.unit==='pack'?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});save();const count=colors.length*draft.stores.length;if(editing){try{await saveAndRenderModelPhoto(b,draft.model,photoBlob,oldModel);}catch(error){await V3Photos.markDirty(b.id,draft.model);}}draft.editIds=[];draft.editContext='';draft.originalModel=draft.model;draft.stores=[];screen=editing&&editContext==='model'?'details':'entry';render();toast(editing?(editContext==='preview'?'已保存该门店修改':'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);}
+  if(name==='allocate'){
+    const err=validDraft();if(err)return toast(err);
+    draft.sale=normalizeSale(draft.sale);
+    const quantity=parseQuantity(draft.qty,draft.unit);
+    if(draft.unit==='pack'&&quantity===.5)draft.qty='半';
+    const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob,model=draft.model;
+    b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
+    if(editing){const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));}
+    for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:draft.unit==='pack'?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
+    save();
+    const count=colors.length*draft.stores.length;
+    const photoUpdate=editing?saveAndRenderModelPhoto(b,model,photoBlob,oldModel):null;
+    draft.editIds=[];draft.editContext='';draft.originalModel=model;draft.stores=[];
+    screen=editing&&editContext==='model'?'details':'entry';
+    render();
+    toast(editing?(editContext==='preview'?'已保存该门店修改':'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);
+    if(photoUpdate){
+      try{await photoUpdate;toast(editContext==='preview'?'该门店与商品图片已更新':'型号资料与商品图片已更新');}
+      catch(error){await V3Photos.markDirty(b.id,model);toast('资料已保存，商品图片将在下次打开时更新');}
+    }
+  }
   if(name==='clear-search'){detailSearchTerm='';render();setTimeout(()=>document.querySelector('#detailSearch')?.focus(),0);}
   if(name==='cancel-edit'){const returnToDetails=draft.editContext==='model';releaseDraftPhoto();draft=freshDraft();screen=returnToDetails?'details':'entry';render();}
   if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.rawPhotoFile&&!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;if(draft.rawPhotoFile){openPhotoCrop(draft.rawPhotoFile,true);return;}await completeCurrentModel();}
@@ -361,7 +381,10 @@ async function createProductImage(batch,model,sourceBlob){
   const noteH=noteLines.length?32+noteLines.length*50:0;
   const H=photoH+headerH+prepared.reduce((sum,row)=>sum+row.height,0)+noteH;
   const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
-  const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,W,H);c.drawImage(photo,0,0,W,photoH);
+  const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,W,H);
+  const sourceW=photo.naturalWidth||photo.width,sourceH=photo.naturalHeight||photo.height,coverScale=Math.max(W/sourceW,photoH/sourceH);
+  const cropW=W/coverScale,cropH=photoH/coverScale,cropX=(sourceW-cropW)/2,cropY=(sourceH-cropH)/2;
+  c.drawImage(photo,cropX,cropY,cropW,cropH,0,0,W,photoH);
   const border='#e4e4e4';c.strokeStyle=border;c.lineWidth=2;
   const separator=y=>{c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();};
   separator(photoH);
@@ -476,6 +499,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=5',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=6',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
