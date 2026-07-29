@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'procure-easy-v3-';
-const CACHE = 'procure-easy-v3-photo-11';
-const ASSETS = ['./','index.html','styles.css?v=4','theme.css?v=3','reference.css?v=1','photo.css?v=8','photo.js?v=3','app.js?v=11','manifest.webmanifest','icon.svg','icon-180.png','icon-192.png','icon-512.png'];
+const CACHE = 'procure-easy-v3-photo-12';
+const ASSETS = ['./','index.html','styles.css?v=4','theme.css?v=3','reference.css?v=1','photo.css?v=9','photo.js?v=4','app.js?v=12','manifest.webmanifest','icon.svg','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE).map(k => caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch', event => {

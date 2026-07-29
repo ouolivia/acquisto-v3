@@ -5,9 +5,12 @@
 .photo-capture-preview:focus-visible{outline:3px solid #111;outline-offset:3px}
 .photo-capture-preview img{width:100%;height:100%;object-fit:cover}
 .photo-capture-preview svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.7}
-.gross-margin{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:8px 9px;border:1px solid var(--line);border-radius:11px;background:#f7f7f8;font-size:10px;line-height:1}
-.gross-margin span{color:var(--muted);font-weight:650}
-.gross-margin strong{color:#111;font-size:13px;font-weight:850;white-space:nowrap}
+.gross-margin{display:flex;align-items:center;justify-content:center;min-height:34px;padding:8px 9px;border:1px solid var(--line);border-radius:11px;background:#f7f7f8;line-height:1}
+.gross-margin strong{color:#111;font-size:14px;font-weight:850;white-space:nowrap}
+.batch-swipe-wrap{position:relative;overflow:hidden;margin-bottom:12px;border-radius:11px;background:#c94138}
+.batch-swipe-actions{position:absolute;z-index:0;top:0;right:0;bottom:0;width:88px}
+.batch-swipe-actions button{width:100%;height:100%;background:#c94138;color:#fff;font-size:12px;font-weight:750}
+.batch-swipe-content{position:relative;z-index:1;margin-bottom:0!important;touch-action:pan-y;will-change:transform}
 .photo-entry-panel{display:grid;min-width:0;gap:7px}
 .photo-entry-heading{display:flex;align-items:baseline;gap:9px;min-width:0}
 .photo-entry-heading h2{flex:0 0 auto;margin:0;font-size:16px}

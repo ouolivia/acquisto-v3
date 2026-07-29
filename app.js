@@ -12,6 +12,7 @@ let detailSearchTerm = '';
 let colorCategory = 'number';
 let colorManageMode = false;
 let suppressColorClickUntil = 0;
+let suppressBatchOpenUntil = 0;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -28,7 +29,7 @@ function grossMarginDisplay(cost,sale){
   if(String(cost??'').trim()===''||String(sale??'').trim()==='')return '待计算';
   const costValue=Number(cost),saleValue=Number(sale);
   if(!Number.isFinite(costValue)||!Number.isFinite(saleValue)||saleValue<=0)return '待计算';
-  return `${((saleValue-costValue)/saleValue*100).toFixed(1)}%`;
+  return `${((saleValue-costValue)/saleValue*100).toFixed(2)}%`;
 }
 function getBatch(){ return state.batches.find(b=>b.id===activeBatchId); }
 function toast(msg){ const el=document.querySelector('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),1800); }
@@ -108,7 +109,7 @@ function homeView(){
       <button class="btn btn-primary btn-wide" data-action="start">开始录入采购</button>
     </div></section>
     <div class="section-head"><h2>历史采购</h2><span class="muted">${batches.length} 批</span></div>
-    ${batches.length?batches.map(b=>{const s=batchStats(b);return `<button class="card batch btn-wide" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span></div><span class="arrow">›</span></button>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
+    ${batches.length?batches.map(b=>{const s=batchStats(b);return `<div class="batch-swipe-wrap"><div class="batch-swipe-actions"><button type="button" data-delete-batch="${b.id}" aria-label="删除 ${esc(b.supplier)} ${esc(b.date)}">删除</button></div><button class="card batch btn-wide batch-swipe-content" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span></div><span class="arrow">›</span></button></div>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
   </div>`;
 }
 
@@ -122,7 +123,7 @@ function entryView(){
   const previewStores=[...previewLines.reduce((map,l)=>{if(!map.has(l.store))map.set(l.store,{store:l.store,lines:[],ids:[]});const g=map.get(l.store);g.lines.push(l);g.ids.push(l.id);return map;},new Map()).values()];
   return `${header('采购录入',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="card photo-capture-card">
-      <div class="photo-capture-column"><button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button><div class="gross-margin"><span>毛利率</span><strong id="grossMargin">${grossMarginDisplay(draft.cost,draft.sale)}</strong></div></div>
+      <div class="photo-capture-column"><button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button><div class="gross-margin"><strong id="grossMargin">${grossMarginDisplay(draft.cost,draft.sale)}</strong></div></div>
       <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已使用；点击可重拍。':'点击照片直接拍摄。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
@@ -232,7 +233,25 @@ function bind(){
   });
   document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(draft.unit==='pack'){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
   document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];render();});
-  document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
+  document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{if(Date.now()<suppressBatchOpenUntil)return;activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
+  document.querySelectorAll('[data-delete-batch]').forEach(x=>x.onclick=async()=>{
+    const batch=state.batches.find(item=>item.id===x.dataset.deleteBatch);
+    if(!batch)return;
+    if(!confirm(`确定删除 ${batch.supplier} ${batch.date} 这批采购吗？`))return;
+    if(!confirm('再次确认：删除后将清空该批全部采购数据和照片缓存，且无法恢复。确定继续吗？'))return;
+    state.batches=state.batches.filter(item=>item.id!==batch.id);
+    save();
+    try{await V3Photos.removeBatch(batch.id);}catch(error){}
+    render();
+    toast('该批采购及照片缓存已删除');
+  });
+  document.querySelectorAll('.batch-swipe-content').forEach(x=>{
+    let startX=null,dx=0;
+    x.onpointerdown=e=>{startX=e.clientX;dx=0;x.style.transition='none';x.setPointerCapture?.(e.pointerId);};
+    x.onpointermove=e=>{if(startX===null)return;dx=Math.max(-88,Math.min(0,e.clientX-startX));if(Math.abs(dx)>6)x.style.transform=`translateX(${dx}px)`;};
+    x.onpointerup=e=>{if(startX===null)return;if(Math.abs(dx)>6)suppressBatchOpenUntil=Date.now()+500;x.style.transition='transform .2s ease';x.style.transform=dx<-36?'translateX(-88px)':'translateX(0)';startX=null;x.releasePointerCapture?.(e.pointerId);};
+    x.onpointercancel=()=>{startX=null;x.style.transition='transform .2s ease';x.style.transform='translateX(0)';};
+  });
   document.querySelectorAll('[data-edit-model]').forEach(x=>x.onclick=async()=>{
     const batch=getBatch(),lines=batch.lines.filter(l=>l.model===x.dataset.editModel),first=lines[0];
     if(!first)return;
@@ -520,6 +539,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=12',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();

@@ -59,6 +59,10 @@
   async function remove(batchId,model){
     return transaction('readwrite',store=>store.delete(key(batchId,model)));
   }
+  async function removeBatch(batchId){
+    const records=await listBatch(batchId);
+    await Promise.all(records.map(record=>remove(batchId,record.model)));
+  }
   async function move(batchId,fromModel,toModel){
     if(!fromModel||fromModel===toModel)return get(batchId,toModel);
     const current=await get(batchId,fromModel);
@@ -121,5 +125,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,markDirty,remove,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,markDirty,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
 })();
