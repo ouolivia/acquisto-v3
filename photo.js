@@ -47,10 +47,10 @@
     const current=await get(batchId,model);
     return put({...(current||{}),batchId,model,sourceBlob,renderedBlob:null,filename:'',dirty:true});
   }
-  async function saveRendered(batchId,model,renderedBlob,filename){
+  async function saveRendered(batchId,model,renderedBlob,filename,renderVersion=1){
     const current=await get(batchId,model);
     if(!current?.sourceBlob)throw new Error('缺少商品照片');
-    return put({...current,batchId,model,renderedBlob,filename,dirty:false,renderedAt:Date.now()});
+    return put({...current,batchId,model,renderedBlob,filename,renderVersion,dirty:false,renderedAt:Date.now()});
   }
   async function markDirty(batchId,model){
     const current=await get(batchId,model);

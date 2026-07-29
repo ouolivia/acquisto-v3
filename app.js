@@ -1,4 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
+const PHOTO_RENDER_VERSION = 2;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -330,13 +331,20 @@ function photoPrice(value){return pricePending(value)?'待定':Number(value).toF
 function photoFilename(model,cost,sale){return `${photoNamePart(model)};${photoPrice(cost)};${photoPrice(sale)}.jpg`;}
 function shareUnit(line){if(line.unit==='pack')return Number(line.qty)===.5?'半包':`${compactNumber(line.qty)}包`;return `${compactNumber(line.qty)}件`;}
 function imageAllocationRows(lines){
-  const groups=new Map();
+  const colorGroups=new Map();
   for(const line of lines){
     const groupKey=[line.color||'',line.unit,line.qty,line.packSize].join('\u001f');
-    if(!groups.has(groupKey))groups.set(groupKey,{color:line.color||'',quantity:shareUnit(line),stores:[]});
-    groups.get(groupKey).stores.push(line.store);
+    if(!colorGroups.has(groupKey))colorGroups.set(groupKey,{color:line.color||'',unit:line.unit,qty:line.qty,packSize:line.packSize,quantity:shareUnit(line),stores:[]});
+    colorGroups.get(groupKey).stores.push(line.store);
   }
-  return [...groups.values()].map(group=>({...group,stores:[...new Set(group.stores)].sort((a,b)=>a-b)}));
+  const merged=new Map();
+  for(const group of colorGroups.values()){
+    const stores=[...new Set(group.stores)].sort((a,b)=>a-b);
+    const mergeKey=[group.color?'color':'no-color',group.unit,group.qty,group.packSize,stores.join(',')].join('\u001f');
+    if(!merged.has(mergeKey))merged.set(mergeKey,{colors:[],quantity:group.quantity,stores});
+    if(group.color)merged.get(mergeKey).colors.push(group.color);
+  }
+  return [...merged.values()].map(group=>({...group,color:group.colors.join('  ')}));
 }
 function canvasBlob(canvas,type='image/jpeg',quality=.92){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('图片生成失败')),type,quality));}
 function fitCanvasText(context,text,maxWidth,startSize,minSize=24,weight='600'){
@@ -400,7 +408,9 @@ async function createProductImage(batch,model,sourceBlob){
     const top=y;c.fillStyle='#222';c.textBaseline='middle';
     row.storeLines.forEach((storeLine,index)=>{
       const lineY=top+rowPad+lineH/2+index*lineH;
-      c.textAlign='left';c.font='600 40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(index===0?row.color:'',28,lineY);
+      c.textAlign='left';
+      const colorSize=fitCanvasText(c,row.color,125,40,22,'600');
+      c.font=`600 ${colorSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.fillText(index===0?row.color:'',28,lineY);
       c.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(storeLine,170,lineY);
       if(index===0){c.textAlign='right';c.font='700 42px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(`× ${row.quantity}`,W-28,lineY);}
     });
@@ -418,7 +428,7 @@ async function saveAndRenderModelPhoto(batch,model,sourceBlob,oldModel=''){
   const record=await V3Photos.get(batch.id,model);
   if(!record?.sourceBlob)throw new Error('请先拍摄商品照片');
   const output=await createProductImage(batch,model,record.sourceBlob);
-  await V3Photos.saveRendered(batch.id,model,output.blob,output.filename);
+  await V3Photos.saveRendered(batch.id,model,output.blob,output.filename,PHOTO_RENDER_VERSION);
   return output;
 }
 async function regenerateModelPhoto(batch,model){
@@ -433,7 +443,7 @@ async function loadPhotoGallery(force=false){
   const batch=getBatch(),models=modelDetailGroups(batch,'input').map(item=>item.model),items=[];
   for(const model of models){
     let record=await V3Photos.get(batch.id,model);
-    if(record?.sourceBlob&&(force||record.dirty||!record.renderedBlob)){try{await regenerateModelPhoto(batch,model);record=await V3Photos.get(batch.id,model);}catch(error){}}
+    if(record?.sourceBlob&&(force||record.dirty||!record.renderedBlob||record.renderVersion!==PHOTO_RENDER_VERSION)){try{await regenerateModelPhoto(batch,model);record=await V3Photos.get(batch.id,model);}catch(error){}}
     items.push({model,record,url:record?.renderedBlob?URL.createObjectURL(record.renderedBlob):''});
   }
   modal={type:'photo-gallery',items,selected:new Set()};
@@ -499,6 +509,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=6',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=7',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
