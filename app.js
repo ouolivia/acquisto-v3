@@ -15,7 +15,7 @@ let suppressColorClickUntil = 0;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
-function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',rawPhotoFile:null,photoBlob:null,photoUrl:''}; }
+function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',photoBlob:null,photoUrl:''}; }
 function loadState(){ try{ const x=JSON.parse(localStorage.getItem(STORE_KEY)); if(x&&Array.isArray(x.batches)) return {...x,colors:Array.isArray(x.colors)?x.colors:DEFAULT_COLORS}; }catch(e){} return {batches:[],colors:[...DEFAULT_COLORS]}; }
 function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
 function esc(v){ return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -72,15 +72,8 @@ function icon(name){
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>';
 }
 function cameraIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4Z"/><circle cx="12" cy="13" r="3.5"/></svg>';}
-function releaseDraftPhoto(){if(draft.photoUrl)URL.revokeObjectURL(draft.photoUrl);draft.photoUrl='';draft.rawPhotoFile=null;draft.photoBlob=null;}
-function setDraftPhoto(blob){if(draft.photoUrl)URL.revokeObjectURL(draft.photoUrl);draft.rawPhotoFile=null;draft.photoBlob=blob;draft.photoUrl=blob?URL.createObjectURL(blob):'';}
-function setRawPhoto(file){if(draft.photoUrl)URL.revokeObjectURL(draft.photoUrl);draft.rawPhotoFile=file;draft.photoBlob=null;draft.photoUrl=file?URL.createObjectURL(file):'';}
-function openPhotoCrop(file,finishAfterCrop=false){
-  if(!file?.type?.startsWith('image/'))return toast('请选择照片文件');
-  const sourceUrl=URL.createObjectURL(file);
-  modal={type:'photo-crop',file,sourceUrl,finishAfterCrop,crop:{zoom:1,x:0,y:0}};
-  render();
-}
+function releaseDraftPhoto(){if(draft.photoUrl)URL.revokeObjectURL(draft.photoUrl);draft.photoUrl='';draft.photoBlob=null;}
+function setDraftPhoto(blob){if(draft.photoUrl)URL.revokeObjectURL(draft.photoUrl);draft.photoBlob=blob;draft.photoUrl=blob?URL.createObjectURL(blob):'';}
 async function loadDraftPhoto(model){
   const record=await V3Photos.get(activeBatchId,model);
   if(record?.sourceBlob)setDraftPhoto(record.sourceBlob);
@@ -124,7 +117,7 @@ function entryView(){
   return `${header('采购录入',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="card photo-capture-card">
       <button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button>
-      <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'已确认；点击照片可重拍。':'点击照片拍摄并确认。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+      <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已使用；点击可重拍。':'点击照片直接拍摄。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
         <div class="inside-field"><span>卖价</span><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"></div></div>
@@ -154,7 +147,6 @@ function detailsView(){
 }
 
 function modalView(){
-  if(modal.type==='photo-crop') return `<div class="modal-backdrop centered-modal"><section class="modal photo-crop-modal" role="dialog" aria-modal="true" aria-label="裁剪商品照片"><div class="color-manager-head"><span class="color-manager-icon">${cameraIcon()}</span><div><h2>裁剪商品照片</h2><p class="modal-hint">单指拖动调整位置，双指捏合放大或缩小。</p></div></div><div class="photo-crop-stage" id="photoCropStage"><img id="photoCropImage" src="${modal.sourceUrl}" alt="待裁剪照片"></div><div class="modal-actions"><button class="btn btn-light" data-action="retake-photo">重新拍照</button><button class="btn btn-primary" data-action="save-photo-crop">使用照片</button></div></section></div>`;
   if(modal.type==='photo-gallery'){
     const selected=modal.selected||new Set(),ready=modal.items.filter(item=>item.record?.renderedBlob);
     return `<div class="modal-backdrop centered-modal"><section class="modal photo-gallery-modal" role="dialog" aria-modal="true" aria-label="商品图片分享"><div class="photo-gallery-head"><div><h2>商品图片</h2><p>${esc(getBatch().supplier)} · 已保存 ${ready.length}/${modal.items.length} 张</p></div><button data-action="close-modal" aria-label="关闭图片分享">×</button></div><div class="photo-gallery-tools"><button class="btn btn-light" data-action="select-all-photos">${selected.size===ready.length&&ready.length?'取消全选':'全选'}</button><button class="btn btn-light" data-action="refresh-photos">重新生成</button></div><p class="photo-gallery-status">已选 ${selected.size} 张；批量分享会打开手机系统分享面板，再选择微信工作群。</p><div class="photo-grid">${modal.items.map(item=>`<button class="photo-item ${selected.has(item.model)?'selected':''}" data-photo-model="${esc(item.model)}" ${item.record?.renderedBlob?'':'disabled'}>${item.url?`<img src="${item.url}" alt="${esc(item.model)} 商品图片">`:'<span class="photo-missing">缺少照片</span>'}<b>${esc(item.model)}</b><small>${item.record?.renderedBlob?esc(item.record.filename):'未拍照'}</small>${selected.has(item.model)?'<i>✓</i>':''}</button>`).join('')}</div><div class="photo-gallery-actions"><button class="btn btn-light" data-action="save-photos">保存选中图片</button><button class="btn btn-primary" data-action="share-photos">批量分享到工作群</button></div></section></div>`;
@@ -246,7 +238,7 @@ function bind(){
     screen='entry';render();
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
   });
-  document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const rawPhotoFile=draft.rawPhotoFile,photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',rawPhotoFile,photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
+  document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
   document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));save();await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
   document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
   document.querySelectorAll('.swipe-content').forEach(x=>{let startX=null,dx=0;x.onpointerdown=e=>{if(e.target.closest('button'))return;startX=e.clientX;dx=0;x.style.transition='none';x.setPointerCapture?.(e.pointerId);};x.onpointermove=e=>{if(startX===null)return;dx=Math.max(-132,Math.min(0,e.clientX-startX));if(Math.abs(dx)>6)x.style.transform=`translateX(${dx}px)`;};x.onpointerup=e=>{if(startX===null)return;x.style.transition='transform .2s ease';x.style.transform=dx<-45?'translateX(-132px)':'translateX(0)';x.closest('.swipe-wrap')?.classList.toggle('open',dx<-45);startX=null;x.releasePointerCapture?.(e.pointerId);};});
@@ -254,52 +246,22 @@ function bind(){
   document.querySelectorAll('[data-photo-model]').forEach(x=>x.onclick=()=>{const model=x.dataset.photoModel;if(modal.selected.has(model))modal.selected.delete(model);else modal.selected.add(model);render();});
   document.querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>action(x.dataset.action));
   const photoInput=document.querySelector('#photoInput');
-  if(photoInput)photoInput.onchange=()=>{const file=photoInput.files?.[0];if(file)openPhotoCrop(file);photoInput.value='';};
+  if(photoInput)photoInput.onchange=()=>{
+    const file=photoInput.files?.[0];
+    if(file){
+      if(!file.type?.startsWith('image/'))toast('请选择照片文件');
+      else{
+        const editing=draft.editIds.length>0;
+        setDraftPhoto(file);
+        render();
+        setTimeout(()=>document.querySelector('#model')?.focus(),0);
+        toast(editing?'新照片已使用，保存修改后更新商品图片':'照片已使用，可以录入商品数据');
+      }
+    }
+    photoInput.value='';
+  };
   const quickColor=document.querySelector('#quickColor');
   if(quickColor)quickColor.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();action('quick-add-color');}};
-  const cropStage=document.querySelector('#photoCropStage'),cropImage=document.querySelector('#photoCropImage');
-  if(cropStage&&cropImage){
-    const applyCropTransform=()=>{cropImage.style.transform=`translate(${modal.crop.x}px,${modal.crop.y}px) scale(${modal.crop.zoom})`;};
-    const points=new Map();
-    const point=e=>({x:e.clientX,y:e.clientY});
-    const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-    const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
-    const beginPan=p=>({type:'pan',start:p,ox:modal.crop.x,oy:modal.crop.y});
-    const beginPinch=()=>{
-      const [a,b]=[...points.values()],mid=midpoint(a,b);
-      return {type:'pinch',distance:Math.max(1,distance(a,b)),zoom:modal.crop.zoom,mid,ox:modal.crop.x,oy:modal.crop.y};
-    };
-    let gesture=null;
-    cropStage.onpointerdown=e=>{
-      points.set(e.pointerId,point(e));
-      cropStage.setPointerCapture?.(e.pointerId);
-      gesture=points.size>=2?beginPinch():beginPan(point(e));
-    };
-    cropStage.onpointermove=e=>{
-      if(!points.has(e.pointerId))return;
-      points.set(e.pointerId,point(e));
-      if(points.size>=2){
-        if(gesture?.type!=='pinch')gesture=beginPinch();
-        const [a,b]=[...points.values()],mid=midpoint(a,b);
-        modal.crop.zoom=Math.max(1,Math.min(4,gesture.zoom*distance(a,b)/gesture.distance));
-        modal.crop.x=gesture.ox+mid.x-gesture.mid.x;
-        modal.crop.y=gesture.oy+mid.y-gesture.mid.y;
-      }else if(gesture?.type==='pan'){
-        const current=point(e);
-        modal.crop.x=gesture.ox+current.x-gesture.start.x;
-        modal.crop.y=gesture.oy+current.y-gesture.start.y;
-      }
-      applyCropTransform();
-    };
-    const endPointer=e=>{
-      points.delete(e.pointerId);
-      try{cropStage.releasePointerCapture?.(e.pointerId);}catch(error){}
-      gesture=points.size>=2?beginPinch():points.size===1?beginPan([...points.values()][0]):null;
-    };
-    cropStage.onpointerup=endPointer;
-    cropStage.onpointercancel=endPointer;
-    applyCropTransform();
-  }
   const cost=document.querySelector('#cost'),sale=document.querySelector('#sale');
   if(cost)cost.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();syncDraft();sale?.focus();}};
   if(sale)sale.onblur=()=>{draft.sale=normalizeSale(sale.value);sale.value=draft.sale;};
@@ -317,13 +279,11 @@ async function action(name){
   if(name==='details'){const lines=persistDraftNote();if(draft.model&&lines.length){try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}catch(error){}}colorManageMode=false;screen='details';render();}
   if(name==='continue'){screen='entry';render();}
   if(name==='take-photo'){document.querySelector('#photoInput')?.click();}
-  if(name==='retake-photo'){if(modal?.type==='photo-crop'&&modal.sourceUrl)URL.revokeObjectURL(modal.sourceUrl);modal=null;render();setTimeout(()=>document.querySelector('#photoInput')?.click(),0);}
-  if(name==='save-photo-crop'){const stage=document.querySelector('#photoCropStage');if(!stage)return;try{const rect=stage.getBoundingClientRect(),finishAfterCrop=modal.finishAfterCrop,blob=await V3Photos.crop(modal.file,{...modal.crop,frameW:rect.width,frameH:rect.height});URL.revokeObjectURL(modal.sourceUrl);setDraftPhoto(blob);modal=null;if(finishAfterCrop)await completeCurrentModel();else{render();setTimeout(()=>document.querySelector('#model')?.focus(),0);toast('照片已确认，可以录入商品数据');}}catch(error){toast(error.message||'照片裁剪失败');}}
   if(name==='add-color'){syncDraft();modal={type:'color'};render();setTimeout(()=>document.querySelector('#newColor')?.focus(),0);}
   if(name==='clear-colors'){syncDraft();draft.colors=[];render();toast('已取消颜色选择');}
   if(name==='edit-colors'){syncDraft();modal={type:'edit-colors'};render();setTimeout(()=>document.querySelector('[data-color-original]')?.focus(),0);}
   if(name==='sort-colors'){syncDraft();modal={type:'sort-colors',order:[...state.colors],selected:null};render();}
-  if(name==='close-modal'){if(modal?.type==='photo-crop'&&modal.sourceUrl)URL.revokeObjectURL(modal.sourceUrl);revokeGalleryUrls();modal=null;render();}
+  if(name==='close-modal'){revokeGalleryUrls();modal=null;render();}
   if(name==='save-color'){const c=document.querySelector('#newColor').value.trim();if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isNumericColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
   if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=input?.value.trim();if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isNumericColor(c)?'number':'text';save();render();toast(`已增加并选中 ${c}`);}
   if(name==='finish-color-manage'){syncDraft();colorManageMode=false;render();toast('颜色顺序已保存');}
@@ -353,7 +313,7 @@ async function action(name){
   }
   if(name==='clear-search'){detailSearchTerm='';render();setTimeout(()=>document.querySelector('#detailSearch')?.focus(),0);}
   if(name==='cancel-edit'){const returnToDetails=draft.editContext==='model';releaseDraftPhoto();draft=freshDraft();screen=returnToDetails?'details':'entry';render();}
-  if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.rawPhotoFile&&!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;if(draft.rawPhotoFile){openPhotoCrop(draft.rawPhotoFile,true);return;}await completeCurrentModel();}
+  if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;await completeCurrentModel();}
   if(name==='photos'){await loadPhotoGallery();}
   if(name==='select-all-photos'){const ready=modal.items.filter(item=>item.record?.renderedBlob).map(item=>item.model);modal.selected=modal.selected.size===ready.length?new Set():new Set(ready);render();}
   if(name==='refresh-photos'){revokeGalleryUrls();await loadPhotoGallery(true);toast('商品图片已重新生成');}
@@ -551,6 +511,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=9',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
