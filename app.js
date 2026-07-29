@@ -469,5 +469,13 @@ function jpegPagesToPdf(dataUrls,w,h){
   const chunks=[enc.encode('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')],offsets=[0];let pos=chunks[0].length;objects.forEach((o,i)=>{offsets.push(pos);const pre=enc.encode(`${i+1} 0 obj\n`),post=enc.encode('\nendobj\n');chunks.push(pre);pos+=pre.length;if(typeof o==='string'){const z=enc.encode(o);chunks.push(z);pos+=z.length;}else{const a=enc.encode(o.head),z=enc.encode(o.tail);chunks.push(a,o.bytes,z);pos+=a.length+o.bytes.length+z.length;}chunks.push(post);pos+=post.length;});const xref=pos;let table=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`;for(let i=1;i<offsets.length;i++)table+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';table+=`trailer\n<< /Size ${objects.length+1} /Root ${catalog} 0 R >>\nstartxref\n${xref}\n%%EOF`;chunks.push(enc.encode(table));return new Blob(chunks,{type:'application/pdf'});
 }
 
-if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+if('serviceWorker' in navigator){
+  let refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(refreshing)return;
+    refreshing=true;
+    location.reload();
+  });
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=5',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+}
 render();
