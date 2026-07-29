@@ -24,6 +24,12 @@ function money(v){ return pricePending(v)?'待定':Number(v).toFixed(2); }
 function euro(v){ return pricePending(v)?'待定':Number(v).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function priceDisplay(v){ return pricePending(v)?'待定':`€${money(v)}`; }
 function draftPrice(v){ return pricePending(v)?'':String(v); }
+function grossMarginDisplay(cost,sale){
+  if(String(cost??'').trim()===''||String(sale??'').trim()==='')return '待计算';
+  const costValue=Number(cost),saleValue=Number(sale);
+  if(!Number.isFinite(costValue)||!Number.isFinite(saleValue)||saleValue<=0)return '待计算';
+  return `${((saleValue-costValue)/saleValue*100).toFixed(1)}%`;
+}
 function getBatch(){ return state.batches.find(b=>b.id===activeBatchId); }
 function toast(msg){ const el=document.querySelector('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),1800); }
 function parseQuantity(value,unit){ const s=String(value??'').trim(); if(unit==='pack'&&s==='半')return .5; return Number(s.replace(',','.')); }
@@ -116,7 +122,7 @@ function entryView(){
   const previewStores=[...previewLines.reduce((map,l)=>{if(!map.has(l.store))map.set(l.store,{store:l.store,lines:[],ids:[]});const g=map.get(l.store);g.lines.push(l);g.ids.push(l.id);return map;},new Map()).values()];
   return `${header('采购录入',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="card photo-capture-card">
-      <button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button>
+      <div class="photo-capture-column"><button type="button" class="photo-capture-preview" data-action="take-photo" aria-label="${draft.photoUrl?'重新拍摄商品照片':'拍摄商品照片'}">${draft.photoUrl?`<img src="${draft.photoUrl}" alt="当前型号商品照片">`:cameraIcon()}</button><div class="gross-margin"><span>毛利率</span><strong id="grossMargin">${grossMarginDisplay(draft.cost,draft.sale)}</strong></div></div>
       <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已使用；点击可重拍。':'点击照片直接拍摄。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
@@ -263,8 +269,11 @@ function bind(){
   const quickColor=document.querySelector('#quickColor');
   if(quickColor)quickColor.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();action('quick-add-color');}};
   const cost=document.querySelector('#cost'),sale=document.querySelector('#sale');
+  const updateGrossMargin=()=>{const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale?.value);};
+  if(cost)cost.oninput=updateGrossMargin;
+  if(sale)sale.oninput=updateGrossMargin;
   if(cost)cost.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();syncDraft();sale?.focus();}};
-  if(sale)sale.onblur=()=>{draft.sale=normalizeSale(sale.value);sale.value=draft.sale;};
+  if(sale)sale.onblur=()=>{draft.sale=normalizeSale(sale.value);sale.value=draft.sale;updateGrossMargin();};
 }
 
 async function completeCurrentModel(){
@@ -511,6 +520,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
