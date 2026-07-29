@@ -89,8 +89,8 @@
   }
   async function crop(file,options){
     const image=await loadImage(file);
-    const frameW=Math.max(1,Number(options.frameW)||4);
-    const frameH=Math.max(1,Number(options.frameH)||3);
+    const frameW=Math.max(1,Number(options.frameW)||3);
+    const frameH=Math.max(1,Number(options.frameH)||4);
     const zoom=Math.max(1,Number(options.zoom)||1);
     const offsetX=Number(options.x)||0;
     const offsetY=Number(options.y)||0;
@@ -104,7 +104,7 @@
     sy=Math.max(0,Math.min(image.naturalHeight-cropH,sy));
     const canvas=document.createElement('canvas');
     canvas.width=1080;
-    canvas.height=810;
+    canvas.height=1440;
     const context=canvas.getContext('2d');
     context.fillStyle='#fff';
     context.fillRect(0,0,canvas.width,canvas.height);

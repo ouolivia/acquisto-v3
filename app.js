@@ -152,7 +152,7 @@ function detailsView(){
 }
 
 function modalView(){
-  if(modal.type==='photo-crop') return `<div class="modal-backdrop centered-modal"><section class="modal photo-crop-modal" role="dialog" aria-modal="true" aria-label="裁剪商品照片"><div class="color-manager-head"><span class="color-manager-icon">${cameraIcon()}</span><div><h2>裁剪商品照片</h2><p class="modal-hint">拖动照片调整位置，使用滑块放大裁剪范围。</p></div></div><div class="photo-crop-stage" id="photoCropStage"><img id="photoCropImage" src="${modal.sourceUrl}" alt="待裁剪照片"></div><div class="photo-crop-toolbar"><span>原图</span><input id="photoZoom" type="range" min="1" max="3" step="0.01" value="${modal.crop.zoom}" aria-label="照片缩放"><span>放大</span></div><div class="modal-actions"><button class="btn btn-light" data-action="retake-photo">重新拍照</button><button class="btn btn-primary" data-action="save-photo-crop">使用照片</button></div></section></div>`;
+  if(modal.type==='photo-crop') return `<div class="modal-backdrop centered-modal"><section class="modal photo-crop-modal" role="dialog" aria-modal="true" aria-label="裁剪商品照片"><div class="color-manager-head"><span class="color-manager-icon">${cameraIcon()}</span><div><h2>裁剪商品照片</h2><p class="modal-hint">单指拖动调整位置，双指捏合放大或缩小。</p></div></div><div class="photo-crop-stage" id="photoCropStage"><img id="photoCropImage" src="${modal.sourceUrl}" alt="待裁剪照片"></div><div class="modal-actions"><button class="btn btn-light" data-action="retake-photo">重新拍照</button><button class="btn btn-primary" data-action="save-photo-crop">使用照片</button></div></section></div>`;
   if(modal.type==='photo-gallery'){
     const selected=modal.selected||new Set(),ready=modal.items.filter(item=>item.record?.renderedBlob);
     return `<div class="modal-backdrop centered-modal"><section class="modal photo-gallery-modal" role="dialog" aria-modal="true" aria-label="商品图片分享"><div class="photo-gallery-head"><div><h2>商品图片</h2><p>${esc(getBatch().supplier)} · 已保存 ${ready.length}/${modal.items.length} 张</p></div><button data-action="close-modal" aria-label="关闭图片分享">×</button></div><div class="photo-gallery-tools"><button class="btn btn-light" data-action="select-all-photos">${selected.size===ready.length&&ready.length?'取消全选':'全选'}</button><button class="btn btn-light" data-action="refresh-photos">重新生成</button></div><p class="photo-gallery-status">已选 ${selected.size} 张；批量分享会打开手机系统分享面板，再选择微信工作群。</p><div class="photo-grid">${modal.items.map(item=>`<button class="photo-item ${selected.has(item.model)?'selected':''}" data-photo-model="${esc(item.model)}" ${item.record?.renderedBlob?'':'disabled'}>${item.url?`<img src="${item.url}" alt="${esc(item.model)} 商品图片">`:'<span class="photo-missing">缺少照片</span>'}<b>${esc(item.model)}</b><small>${item.record?.renderedBlob?esc(item.record.filename):'未拍照'}</small>${selected.has(item.model)?'<i>✓</i>':''}</button>`).join('')}</div><div class="photo-gallery-actions"><button class="btn btn-light" data-action="save-photos">保存选中图片</button><button class="btn btn-primary" data-action="share-photos">批量分享到工作群</button></div></section></div>`;
@@ -196,7 +196,17 @@ function bind(){
   document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(draft.unit==='pack'){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
   document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];render();});
   document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
-  document.querySelectorAll('[data-edit-model]').forEach(x=>x.onclick=async()=>{const lines=getBatch().lines.filter(l=>l.model===x.dataset.editModel),first=lines[0];if(!first)return;releaseDraftPhoto();draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[...new Set(lines.map(l=>l.store).filter(n=>STORES.includes(n)))].sort((a,b)=>a-b),editIds:lines.map(l=>l.id),editContext:'model'};await loadDraftPhoto(first.model);screen='entry';render();});
+  document.querySelectorAll('[data-edit-model]').forEach(x=>x.onclick=async()=>{
+    const batch=getBatch(),lines=batch.lines.filter(l=>l.model===x.dataset.editModel),first=lines[0];
+    if(!first)return;
+    let photoRecord=null;
+    try{photoRecord=await V3Photos.get(batch.id,first.model);}catch(error){}
+    releaseDraftPhoto();
+    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[...new Set(lines.map(l=>l.store).filter(n=>STORES.includes(n)))].sort((a,b)=>a-b),editIds:lines.map(l=>l.id),editContext:'model'};
+    if(photoRecord?.sourceBlob)setDraftPhoto(photoRecord.sourceBlob);
+    screen='entry';render();
+    if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
+  });
   document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const rawPhotoFile=draft.rawPhotoFile,photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',rawPhotoFile,photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
   document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));save();await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
   document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
@@ -206,15 +216,47 @@ function bind(){
   document.querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>action(x.dataset.action));
   const photoInput=document.querySelector('#photoInput');
   if(photoInput)photoInput.onchange=()=>{const file=photoInput.files?.[0];if(file){if(draft.editIds.length)openPhotoCrop(file);else{setRawPhoto(file);render();toast('照片已拍摄，提交型号时可裁剪');}}photoInput.value='';};
-  const cropStage=document.querySelector('#photoCropStage'),cropImage=document.querySelector('#photoCropImage'),zoom=document.querySelector('#photoZoom');
-  if(cropStage&&cropImage&&zoom){
+  const cropStage=document.querySelector('#photoCropStage'),cropImage=document.querySelector('#photoCropImage');
+  if(cropStage&&cropImage){
     const applyCropTransform=()=>{cropImage.style.transform=`translate(${modal.crop.x}px,${modal.crop.y}px) scale(${modal.crop.zoom})`;};
-    zoom.oninput=()=>{modal.crop.zoom=Number(zoom.value);applyCropTransform();};
-    let start=null;
-    cropStage.onpointerdown=e=>{start={x:e.clientX,y:e.clientY,ox:modal.crop.x,oy:modal.crop.y};cropStage.setPointerCapture?.(e.pointerId);};
-    cropStage.onpointermove=e=>{if(!start)return;modal.crop.x=start.ox+e.clientX-start.x;modal.crop.y=start.oy+e.clientY-start.y;applyCropTransform();};
-    cropStage.onpointerup=e=>{start=null;cropStage.releasePointerCapture?.(e.pointerId);};
-    cropStage.onpointercancel=()=>{start=null;};
+    const points=new Map();
+    const point=e=>({x:e.clientX,y:e.clientY});
+    const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+    const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+    const beginPan=p=>({type:'pan',start:p,ox:modal.crop.x,oy:modal.crop.y});
+    const beginPinch=()=>{
+      const [a,b]=[...points.values()],mid=midpoint(a,b);
+      return {type:'pinch',distance:Math.max(1,distance(a,b)),zoom:modal.crop.zoom,mid,ox:modal.crop.x,oy:modal.crop.y};
+    };
+    let gesture=null;
+    cropStage.onpointerdown=e=>{
+      points.set(e.pointerId,point(e));
+      cropStage.setPointerCapture?.(e.pointerId);
+      gesture=points.size>=2?beginPinch():beginPan(point(e));
+    };
+    cropStage.onpointermove=e=>{
+      if(!points.has(e.pointerId))return;
+      points.set(e.pointerId,point(e));
+      if(points.size>=2){
+        if(gesture?.type!=='pinch')gesture=beginPinch();
+        const [a,b]=[...points.values()],mid=midpoint(a,b);
+        modal.crop.zoom=Math.max(1,Math.min(4,gesture.zoom*distance(a,b)/gesture.distance));
+        modal.crop.x=gesture.ox+mid.x-gesture.mid.x;
+        modal.crop.y=gesture.oy+mid.y-gesture.mid.y;
+      }else if(gesture?.type==='pan'){
+        const current=point(e);
+        modal.crop.x=gesture.ox+current.x-gesture.start.x;
+        modal.crop.y=gesture.oy+current.y-gesture.start.y;
+      }
+      applyCropTransform();
+    };
+    const endPointer=e=>{
+      points.delete(e.pointerId);
+      try{cropStage.releasePointerCapture?.(e.pointerId);}catch(error){}
+      gesture=points.size>=2?beginPinch():points.size===1?beginPan([...points.values()][0]):null;
+    };
+    cropStage.onpointerup=endPointer;
+    cropStage.onpointercancel=endPointer;
     applyCropTransform();
   }
   const cost=document.querySelector('#cost'),sale=document.querySelector('#sale');
@@ -307,7 +349,7 @@ async function createProductImage(batch,model,sourceBlob){
   const lines=batch.lines.filter(line=>line.model===model);
   if(!lines.length)throw new Error('找不到型号采购数据');
   const first=lines[0],allocations=imageAllocationRows(lines),photo=await V3Photos.loadImage(sourceBlob);
-  const W=1080,photoH=810,headerH=112,rowPad=18,lineH=52;
+  const W=1080,photoH=1440,headerH=112,rowPad=18,lineH=52;
   const measureCanvas=document.createElement('canvas'),measure=measureCanvas.getContext('2d');
   measure.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   const prepared=allocations.map(group=>{
@@ -327,7 +369,8 @@ async function createProductImage(batch,model,sourceBlob){
   c.textBaseline='middle';c.fillStyle='#171717';
   const modelSize=fitCanvasText(c,model,300,50,30,'700');c.font=`700 ${modelSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='left';c.fillText(model,28,headerY+headerH/2);
   const priceSize=fitCanvasText(c,costSale,380,48,28,'700');c.font=`700 ${priceSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='center';c.fillText(costSale,560,headerY+headerH/2);
-  const supplierSize=fitCanvasText(c,batch.supplier,240,42,25,'600');c.font=`600 ${supplierSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='right';c.fillText(batch.supplier,W-28,headerY+headerH/2);
+  c.fillStyle='#aaa';
+  const supplierSize=fitCanvasText(c,batch.supplier,240,30,20,'500');c.font=`500 ${supplierSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='right';c.fillText(batch.supplier,W-28,headerY+headerH/2);
   let y=photoH+headerH;separator(y);
   c.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   for(const row of prepared){
