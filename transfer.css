@@ -1,0 +1,90 @@
+.transfer-launch-card{padding:14px!important;display:grid;gap:10px}
+.windows-transfer-button{width:100%;border:0;border-radius:20px;background:linear-gradient(135deg,#101113 0%,#202329 100%);color:#fff;display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:14px;text-align:left;padding:16px;box-shadow:0 16px 34px rgba(17,17,17,.16)}
+.windows-transfer-button:active{transform:scale(.992)}
+.windows-transfer-icon,.transfer-head-icon{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;background:#fff;color:#111;font-size:25px;font-weight:900;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.windows-transfer-button span:nth-child(2){display:grid;gap:4px}
+.windows-transfer-button b{font-size:18px;letter-spacing:.01em}
+.windows-transfer-button small{font-size:12px;color:rgba(255,255,255,.62);font-weight:500}
+.windows-transfer-button>i{font-size:28px;font-style:normal;color:rgba(255,255,255,.6)}
+.windows-transfer-state{display:flex;align-items:center;gap:7px;padding:0 5px;color:#8b8d91;font-size:12px;font-weight:650}
+.windows-transfer-state span,.drive-dot{width:8px;height:8px;border-radius:99px;background:#c8c9cc;display:inline-block}
+.windows-transfer-state.sent{color:#278153}.windows-transfer-state.sent span,.drive-dot.online{background:#2eb875;box-shadow:0 0 0 4px rgba(46,184,117,.12)}
+.windows-transfer-state.dirty{color:#a56b00}.windows-transfer-state.dirty span{background:#f0b429;box-shadow:0 0 0 4px rgba(240,180,41,.12)}
+.windows-transfer-state.failed{color:#c94a4a}.windows-transfer-state.failed span{background:#e55c5c}
+.batch-transfer-state{display:inline-flex!important;align-items:center;gap:6px;margin-top:5px;color:#a0a1a5!important;font-size:11px!important}
+.batch-transfer-state:before{content:"";width:6px;height:6px;border-radius:99px;background:#c8c9cc}
+.batch-transfer-state.sent{color:#278153!important}.batch-transfer-state.sent:before{background:#2eb875}
+.batch-transfer-state.dirty{color:#a56b00!important}.batch-transfer-state.dirty:before{background:#f0b429}
+.batch-transfer-state.failed{color:#c94a4a!important}.batch-transfer-state.failed:before{background:#e55c5c}
+
+.transfer-backdrop{background:rgba(12,13,15,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:18px}
+.transfer-modal,.drive-settings-modal,.transfer-progress-modal,.transfer-success-modal{width:min(560px,100%);max-height:min(88vh,760px);overflow:auto;border-radius:30px;padding:0;background:#f7f7f8;box-shadow:0 28px 90px rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.7)}
+.transfer-modal-head{display:grid;grid-template-columns:58px 1fr 44px;gap:14px;align-items:center;padding:22px 22px 18px;background:#fff;border-bottom:1px solid #e8e8ea}
+.transfer-modal-head>div:nth-child(2){min-width:0}
+.transfer-modal-head span{display:block;font-size:11px;color:#9a9ba0;font-weight:750;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.transfer-modal-head h2{font-size:25px;line-height:1.1;margin:0;color:#151619}
+.transfer-modal-head p{font-size:12px;color:#85868b;margin:6px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.transfer-modal-head>button{width:42px;height:42px;border:0;border-radius:50%;background:#f1f1f3;color:#777;font-size:24px}
+.transfer-head-icon{background:#16171a;color:#fff}
+.google-drive-icon{background:linear-gradient(135deg,#4285f4,#34a853 45%,#fbbc04 70%,#ea4335);color:#fff}
+.transfer-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;padding:18px 18px 12px}
+.transfer-summary-grid>div{background:#fff;border:1px solid #e9e9eb;border-radius:17px;padding:13px 9px;text-align:center;display:grid;gap:4px}
+.transfer-summary-grid small{font-size:10px;color:#9a9ba0;font-weight:700}
+.transfer-summary-grid b{font-size:18px;color:#18191b;white-space:nowrap}
+.transfer-package-card{margin:0 18px 12px;padding:14px;background:#fff;border:1px solid #e7e7e9;border-radius:18px;display:grid;grid-template-columns:48px 1fr;gap:12px;align-items:center}
+.transfer-package-icon{width:48px;height:48px;border-radius:14px;background:#eceef2;color:#24262b;display:grid;place-items:center;font-size:13px;font-weight:900}
+.transfer-package-card>div:last-child{min-width:0;display:grid;gap:4px}
+.transfer-package-card b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.transfer-package-card span{font-size:11px;color:#96979b}
+.transfer-warning,.transfer-ready,.transfer-error{margin:0 18px 12px;border-radius:18px;padding:14px}
+.transfer-warning{background:#fff8e8;border:1px solid #f2dfaf;color:#735613}
+.transfer-warning b,.transfer-error b{font-size:13px}.transfer-warning p{font-size:12px;margin:6px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.transfer-warning span{font-size:10px;opacity:.75}
+.transfer-ready{display:flex;gap:12px;align-items:center;background:#eef9f3;border:1px solid #cdebd9;color:#23764a}
+.transfer-ready>span{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#2eb875;color:#fff;font-weight:900}
+.transfer-ready div{display:grid;gap:3px}.transfer-ready b{font-size:13px}.transfer-ready small{font-size:10px;opacity:.75}
+.transfer-error{background:#fff0f0;border:1px solid #f1cccc;color:#a93636;display:grid;gap:4px}.transfer-error span{font-size:11px;line-height:1.4}
+.drive-connection-row{margin:0 18px 12px;padding:14px;background:#16171a;color:#fff;border-radius:20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.drive-connection-row>div{display:flex;align-items:center;gap:10px;min-width:0}
+.drive-connection-row>div>div{display:grid;gap:3px;min-width:0}
+.drive-connection-row b{font-size:13px}.drive-connection-row small{font-size:10px;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drive-dot{flex:none;background:#6b6d72}.drive-dot.configured{background:#f0b429;box-shadow:0 0 0 4px rgba(240,180,41,.12)}
+.drive-connection-row>button{border:0;border-radius:12px;background:#fff;color:#17181b;padding:9px 12px;font-size:11px;font-weight:800;white-space:nowrap}
+.transfer-privacy{font-size:10px;line-height:1.5;color:#96979c;margin:0 21px 16px}
+.transfer-actions{position:sticky;bottom:0;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.35fr);gap:10px;padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:rgba(247,247,248,.92);border-top:1px solid #e4e4e6;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.transfer-actions .btn{min-height:51px;border-radius:16px;font-weight:800;display:flex;align-items:center;justify-content:center;text-decoration:none}
+
+.drive-settings-modal{overflow:hidden}
+.drive-client-field{display:grid;gap:8px;margin:20px 20px 14px}
+.drive-client-field>span{font-size:12px;font-weight:800;color:#4c4d51}
+.drive-client-field input{width:100%;height:54px;border-radius:15px;border:1.5px solid #d8d9dc;background:#fff;padding:0 14px;font-size:14px;outline:none}
+.drive-client-field input:focus{border-color:#17181b;box-shadow:0 0 0 4px rgba(23,24,27,.08)}
+.drive-client-field small{font-size:10px;color:#999a9f;line-height:1.45}
+.drive-setup-steps{margin:0 20px 14px;background:#eceef2;border-radius:18px;padding:15px;color:#4f5156}
+.drive-setup-steps>b{font-size:12px}.drive-setup-steps ol{margin:9px 0 0;padding-left:22px;display:grid;gap:6px;font-size:11px}
+.drive-console-link{display:block;margin:0 20px 20px;padding:14px;border:1px solid #dedfe2;border-radius:15px;background:#fff;color:#24262a;text-decoration:none;font-size:12px;font-weight:800;text-align:center}
+
+.transfer-progress-modal,.transfer-success-modal{text-align:center;padding:36px 28px 28px;overflow:hidden}
+.transfer-progress-orbit{width:90px;height:90px;margin:0 auto 20px;border-radius:28px;background:#141518;display:grid;place-items:center;position:relative;box-shadow:0 18px 35px rgba(20,21,24,.18)}
+.transfer-progress-orbit:after{content:"";position:absolute;inset:-8px;border-radius:35px;border:2px solid transparent;border-top-color:#25272b;animation:transfer-spin 1s linear infinite}
+.transfer-progress-orbit span{color:#fff;font-size:32px;font-weight:900}
+@keyframes transfer-spin{to{transform:rotate(360deg)}}
+.transfer-progress-kicker,.transfer-success-modal>span{font-size:11px;color:#929399;font-weight:800;letter-spacing:.08em}
+.transfer-progress-modal h2,.transfer-success-modal h2{font-size:25px;margin:7px 0 8px}.transfer-progress-modal p,.transfer-success-modal>p{font-size:12px;color:#8a8b90;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.transfer-progress-track{height:8px;border-radius:99px;background:#e2e3e5;margin:26px 0 10px;overflow:hidden}.transfer-progress-track i{height:100%;display:block;border-radius:inherit;background:#151619;transition:width .2s}
+.transfer-progress-number{font-size:11px;color:#86878c}
+.transfer-success-mark{width:82px;height:82px;border-radius:27px;background:#2eb875;color:#fff;display:grid;place-items:center;font-size:42px;font-weight:900;margin:0 auto 20px;box-shadow:0 17px 35px rgba(46,184,117,.24)}
+.transfer-success-path{margin:22px 0 14px;border-radius:19px;background:#fff;border:1px solid #e3e4e6;padding:15px;display:grid;gap:4px;text-align:left}.transfer-success-path small{font-size:9px;color:#9b9ca0;font-weight:800;letter-spacing:.08em}.transfer-success-path b{font-size:16px}.transfer-success-path span{font-size:10px;color:#96979b}
+.transfer-success-note{font-size:10px;line-height:1.55;color:#85868b;background:#eceef2;padding:12px;border-radius:14px}
+.transfer-success-modal .transfer-actions{margin:22px -28px -28px}
+
+@media(max-width:560px){
+  .transfer-backdrop{align-items:flex-end;padding:0}
+  .transfer-modal,.drive-settings-modal,.transfer-progress-modal,.transfer-success-modal{width:100%;max-height:92dvh;border-radius:28px 28px 0 0;border-bottom:0}
+  .transfer-modal-head{padding:18px 17px 15px;grid-template-columns:50px 1fr 40px;gap:11px}
+  .transfer-head-icon{width:50px;height:50px;border-radius:15px}
+  .transfer-modal-head h2{font-size:22px}
+  .transfer-summary-grid{padding:14px 14px 10px;gap:6px}.transfer-summary-grid>div{padding:11px 5px;border-radius:14px}.transfer-summary-grid b{font-size:16px}
+  .transfer-package-card,.transfer-warning,.transfer-ready,.transfer-error,.drive-connection-row{margin-left:14px;margin-right:14px}
+  .transfer-actions{padding-left:14px;padding-right:14px}
+  .windows-transfer-button{grid-template-columns:48px 1fr auto;padding:14px}.windows-transfer-icon{width:48px;height:48px}
+}

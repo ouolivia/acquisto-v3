@@ -13,6 +13,8 @@ let colorCategory = 'number';
 let colorManageMode = false;
 let suppressColorClickUntil = 0;
 let suppressBatchOpenUntil = 0;
+let transferPreviewCache = null;
+let transferPackageCache = null;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -26,6 +28,17 @@ function euro(v){ return pricePending(v)?'待定':Number(v).toLocaleString('it-I
 function priceDisplay(v){ return pricePending(v)?'待定':`€${money(v)}`; }
 function draftPrice(v){ return pricePending(v)?'':String(v); }
 function sentTime(v){ if(!v)return ''; return new Date(v).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+function transferStatus(batch){
+  const transfer=batch?.transfer;
+  if(!transfer)return {key:'idle',label:'未发送到电脑'};
+  if(transfer.status==='sent')return {key:'sent',label:`已发送 · ${sentTime(transfer.sentAt)}`};
+  if(transfer.status==='dirty')return {key:'dirty',label:'采购已修改，需重新发送'};
+  if(transfer.status==='failed')return {key:'failed',label:'发送失败，可重试'};
+  return {key:'idle',label:'未发送到电脑'};
+}
+function markTransferDirty(batch){
+  if(batch?.transfer?.fileId)batch.transfer={...batch.transfer,status:'dirty',dirtyAt:Date.now()};
+}
 function grossMarginDisplay(cost,sale){
   if(String(cost??'').trim()===''||String(sale??'').trim()==='')return '待计算';
   const costValue=Number(cost),saleValue=Number(sale);
@@ -110,7 +123,7 @@ function homeView(){
       <button class="btn btn-primary btn-wide" data-action="start">开始录入采购</button>
     </div></section>
     <div class="section-head"><h2>历史采购</h2><span class="muted">${batches.length} 批</span></div>
-    ${batches.length?batches.map(b=>{const s=batchStats(b);return `<div class="batch-swipe-wrap"><div class="batch-swipe-actions"><button type="button" data-delete-batch="${b.id}" aria-label="删除 ${esc(b.supplier)} ${esc(b.date)}">删除</button></div><button class="card batch btn-wide batch-swipe-content" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span></div><span class="arrow">›</span></button></div>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
+    ${batches.length?batches.map(b=>{const s=batchStats(b),t=transferStatus(b);return `<div class="batch-swipe-wrap"><div class="batch-swipe-actions"><button type="button" data-delete-batch="${b.id}" aria-label="删除 ${esc(b.supplier)} ${esc(b.date)}">删除</button></div><button class="card batch btn-wide batch-swipe-content" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span><small class="batch-transfer-state ${t.key}">${esc(t.label)}</small></div><span class="arrow">›</span></button></div>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
   </div>`;
 }
 
@@ -146,9 +159,10 @@ function entryView(){
 
 function detailsView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
-  const modelGroups=modelDetailGroups(b,'input').reverse();
+  const modelGroups=modelDetailGroups(b,'input').reverse(),transfer=transferStatus(b);
   return `${header('采购明细',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="detail-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg><input id="detailSearch" value="${esc(detailSearchTerm)}" placeholder="模糊搜索当前采购型号" autocomplete="off"><button data-action="clear-search" aria-label="清除搜索">×</button></section>
+    <section class="card no-print transfer-launch-card"><button class="windows-transfer-button" data-action="windows"><span class="windows-transfer-icon">W</span><span><b>发送到 Windows</b><small>全部图片＋Excel · 一个批次一个ZIP</small></span><i>›</i></button><div class="windows-transfer-state ${transfer.key}"><span></span>${esc(transfer.label)}</div></section>
     <section class="card no-print"><div class="toolbar detail-toolbar"><button class="btn btn-secondary" data-action="photos">图片分享</button><button class="btn btn-secondary" data-action="summary">查看汇总</button><button class="btn btn-secondary" data-action="excel">导出 Excel</button><button class="btn btn-secondary" data-action="pdf">导出 PDF</button></div></section>
     <div id="modelList">${modelGroups.length?modelGroups.map(m=>`<div class="swipe-wrap" data-search-model="${esc(m.model.toLowerCase())}"><div class="swipe-actions no-print"><button data-edit-model="${esc(m.model)}">修改</button><button class="delete" data-delete-model="${esc(m.model)}">删除</button></div><section class="card purchase-model swipe-content"><div class="purchase-top"><b>${esc(m.model)}</b><span class="purchase-price"><i>进价/卖价</i><strong>${priceDisplay(m.cost)} <em>/</em> ${priceDisplay(m.sale)}</strong></span></div>${m.note?`<div class="model-note-detail"><span>备注</span><p>${esc(m.note)}</p></div>`:''}<div class="color-list">${m.items.map(g=>{const colors=g.colors.filter(Boolean);return `<div class="color-row"><div class="color-info ${colors.length?'':'no-color'}">${colors.length?`<small>${colors.map(esc).join('　')}</small>`:''}<p>门店 ${g.stores.join(', ')} <strong>× ${quantityDisplay(g)}</strong></p></div></div>`;}).join('')}</div></section></div>`).join(''):`<div class="card empty"><div class="empty-icon">📦</div>还没有分配商品</div>`}</div>
   </div><nav class="bottom"><div class="bottom-inner"><button class="btn btn-light" data-action="home-from-details">采购列表</button><button class="btn btn-primary" data-action="continue">继续录入</button></div></nav>`;
@@ -167,6 +181,45 @@ function modalView(){
       <div class="photo-grid">${visible.length?visible.map(item=>`<button class="photo-item ${selected.has(item.model)?'selected':''} ${item.record?.sentAt?'sent':''}" data-photo-model="${esc(item.model)}" ${item.record?.renderedBlob?'':'disabled'}><span class="photo-thumb">${item.url?`<img src="${item.url}" alt="${esc(item.model)} 商品图片">`:'<span class="photo-missing">缺少照片</span>'}${selected.has(item.model)?'<i class="photo-select-mark">✓</i>':''}${item.record?.sentAt?'<i class="photo-sent-mark">已发送</i>':''}</span><b>${esc(item.model)}</b><small>${item.record?.sentAt?esc(sentTime(item.record.sentAt)):(item.record?.renderedBlob?'待发送':'未拍照')}</small></button>`).join(''):`<div class="photo-gallery-empty"><strong>${filter==='pending'?'全部发送完成':'还没有已发送图片'}</strong><span>${filter==='pending'?'新录入或修改后的图片会显示在这里':'发送成功后，图片会自动归档到这里'}</span></div>`}</div>
       <p class="photo-gallery-status">已选 ${selected.size} 张</p>
       <div class="photo-gallery-actions"><button class="btn btn-light" data-action="save-photos">保存图片</button><button class="btn btn-primary" data-action="share-photos">${filter==='sent'?'再次分享':'发送到工作群'}</button></div>
+    </section></div>`;
+  }
+  if(modal.type==='transfer-preview'){
+    const preview=modal.preview,settings=V3Drive.loadSettings(),configured=Boolean(settings.clientId),connected=V3Drive.isConnected();
+    return `<div class="modal-backdrop centered-modal transfer-backdrop"><section class="modal transfer-modal" role="dialog" aria-modal="true" aria-label="发送到 Windows">
+      <header class="transfer-modal-head"><div class="transfer-head-icon">W</div><div><span>采购传输包</span><h2>发送到 Windows</h2><p>${esc(preview.batch.supplier)} · ${esc(preview.batch.date)}</p></div><button data-action="close-modal" aria-label="关闭发送预览">×</button></header>
+      ${modal.error?`<div class="transfer-error"><b>发送未完成</b><span>${esc(modal.error)}</span></div>`:''}
+      <div class="transfer-summary-grid"><div><small>款式</small><b>${preview.models.length}</b></div><div><small>商品图片</small><b>${preview.readyCount}</b></div><div><small>采购数据</small><b>${preview.lineCount}</b></div><div><small>预计大小</small><b>${esc(V3Drive.formatBytes(preview.estimatedBytes))}</b></div></div>
+      <div class="transfer-package-card"><div class="transfer-package-icon">ZIP</div><div><b>${esc(preview.packageName)}</b><span>Excel、采购JSON、校验清单和全部成品图片</span></div></div>
+      ${preview.missingModels.length?`<div class="transfer-warning"><b>${preview.missingModels.length} 个型号缺少照片</b><p>${preview.missingModels.map(esc).join('、')}</p><span>仍可发送，Excel和其他图片不会受影响。</span></div>`:`<div class="transfer-ready"><span>✓</span><div><b>图片资料完整</b><small>本批全部型号都有成品图片</small></div></div>`}
+      <div class="drive-connection-row"><div><span class="drive-dot ${connected?'online':configured?'configured':''}"></span><div><b>${connected?'Google Drive 已连接':configured?'Google Drive 等待登录':'尚未设置 Google Drive'}</b><small>${configured?'目标目录：采易单 / 待录入':'首次使用需要填写Google OAuth客户端ID'}</small></div></div><button data-action="${configured?'connect-drive':'drive-settings'}">${connected?'检查文件夹':configured?'连接':'设置'}</button></div>
+      <p class="transfer-privacy">文件只会进入你的私有Google Drive，不会上传到GitHub。不同账号时，可把“采易单”文件夹共享给Windows账号。</p>
+      <footer class="transfer-actions"><button class="btn btn-light" data-action="download-transfer">仅保存 ZIP</button><button class="btn btn-primary" data-action="send-windows">${getBatch().transfer?.fileId?'更新并发送':'确认发送'}</button></footer>
+    </section></div>`;
+  }
+  if(modal.type==='drive-settings'){
+    const settings=V3Drive.loadSettings();
+    return `<div class="modal-backdrop centered-modal transfer-backdrop"><section class="modal drive-settings-modal" role="dialog" aria-modal="true" aria-label="Google Drive 设置">
+      <header class="transfer-modal-head"><div class="transfer-head-icon google-drive-icon">G</div><div><span>一次设置，后续直接发送</span><h2>连接 Google Drive</h2><p>使用你自己的Google Cloud OAuth客户端</p></div><button data-action="back-transfer-preview" aria-label="返回发送预览">×</button></header>
+      <label class="drive-client-field"><span>OAuth 客户端 ID</span><input id="googleClientId" value="${esc(settings.clientId)}" placeholder="000000000000-xxxx.apps.googleusercontent.com" autocomplete="off" autocapitalize="off"><small>客户端ID不是密码，可以保存在本机；App不会保存你的Google密码或长期令牌。</small></label>
+      <div class="drive-setup-steps"><b>Google Cloud需要完成</b><ol><li>启用 Google Drive API</li><li>创建“Web应用”OAuth客户端</li><li>授权JavaScript来源填写当前采易单网址</li></ol></div>
+      <a class="drive-console-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">打开 Google Cloud 凭据页面 ↗</a>
+      <footer class="transfer-actions"><button class="btn btn-light" data-action="back-transfer-preview">取消</button><button class="btn btn-primary" data-action="save-drive-settings">保存并连接</button></footer>
+    </section></div>`;
+  }
+  if(modal.type==='transfer-progress'){
+    const progress=Math.max(0,Math.min(100,Number(modal.progress)||0));
+    return `<div class="modal-backdrop centered-modal transfer-backdrop"><section class="modal transfer-progress-modal" role="dialog" aria-modal="true" aria-label="正在发送到 Windows">
+      <div class="transfer-progress-orbit"><span>W</span></div><span class="transfer-progress-kicker">${esc(modal.stage||'准备传输包')}</span><h2>${esc(modal.title||'正在发送到 Windows')}</h2><p>${esc(modal.detail||'请保持页面开启')}</p>
+      <div class="transfer-progress-track"><i style="width:${progress}%"></i></div><b class="transfer-progress-number">${modal.stage==='upload'?`${progress}%`:'处理中'}</b>
+    </section></div>`;
+  }
+  if(modal.type==='transfer-success'){
+    const result=modal.result;
+    return `<div class="modal-backdrop centered-modal transfer-backdrop"><section class="modal transfer-success-modal" role="dialog" aria-modal="true" aria-label="已发送到 Windows">
+      <div class="transfer-success-mark">✓</div><span>上传完成</span><h2>已发送到 Windows</h2><p>${esc(result.name)}</p>
+      <div class="transfer-success-path"><small>Google Drive</small><b>采易单 / 待录入</b><span>${esc(V3Drive.formatBytes(result.size))} · ${esc(sentTime(result.sentAt))}</span></div>
+      <div class="transfer-success-note">Windows登录同一Google账号后会自动同步；不同账号请共享“采易单”文件夹。</div>
+      <footer class="transfer-actions"><button class="btn btn-light" data-action="close-transfer-success">完成</button>${result.webViewLink?`<a class="btn btn-primary" href="${esc(result.webViewLink)}" target="_blank" rel="noopener">在Drive查看</a>`:''}</footer>
     </section></div>`;
   }
   if(modal.type==='color') return `<div class="modal-backdrop centered-modal"><div class="modal color-add-modal"><div class="color-manager-head"><span class="color-manager-icon color-add-icon">＋</span><div><h2>增加颜色</h2><p class="modal-hint">支持数字编号、外文或中文颜色，增加后会自动选中。</p></div></div><div class="color-add-field"><label for="newColor">颜色名称或编号</label><input id="newColor" class="field" placeholder="例如：-5、rosso、红" autocomplete="off"></div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-color">增加并选中</button></div></div></div>`;
@@ -189,7 +242,7 @@ function persistDraftNote(){
   syncDraft();const b=getBatch();if(!b||!draft.model)return [];
   const lines=b.lines.filter(line=>line.model===draft.model);let changed=false;
   lines.forEach(line=>{if((line.note||'')!==draft.note){line.note=draft.note;changed=true;}});
-  if(changed){save();V3Photos.markDirty(b.id,draft.model);}return lines;
+  if(changed){markTransferDirty(b);save();V3Photos.markDirty(b.id,draft.model);}return lines;
 }
 function normalizeSale(v){ const s=String(v).trim(); if(!s)return ''; return s.includes('.')?Number(s).toFixed(2):`${parseInt(s,10)}.99`; }
 function validDraft(){ syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(draft.unit==='pack'&&Number(draft.packSize)<1)return '请输入每包件数'; const qty=parseQuantity(draft.qty,draft.unit); if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量'; if(!draft.stores.length)return '请选择至少一家门店'; return ''; }
@@ -276,8 +329,8 @@ function bind(){
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
   });
   document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
-  document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));save();await V3Photos.markDirty(b.id,model);await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
-  document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
+  document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));markTransferDirty(b);save();await V3Photos.markDirty(b.id,model);await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
+  document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);markTransferDirty(b);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
   document.querySelectorAll('.swipe-content').forEach(x=>{let startX=null,dx=0;x.onpointerdown=e=>{if(e.target.closest('button'))return;startX=e.clientX;dx=0;x.style.transition='none';x.setPointerCapture?.(e.pointerId);};x.onpointermove=e=>{if(startX===null)return;dx=Math.max(-132,Math.min(0,e.clientX-startX));if(Math.abs(dx)>6)x.style.transform=`translateX(${dx}px)`;};x.onpointerup=e=>{if(startX===null)return;x.style.transition='transform .2s ease';x.style.transform=dx<-45?'translateX(-132px)':'translateX(0)';x.closest('.swipe-wrap')?.classList.toggle('open',dx<-45);startX=null;x.releasePointerCapture?.(e.pointerId);};});
   const search=document.querySelector('#detailSearch');if(search){search.oninput=applyDetailFilter;applyDetailFilter();}
   document.querySelectorAll('[data-photo-model]').forEach(x=>x.onclick=()=>{const model=x.dataset.photoModel;if(modal.selected.has(model))modal.selected.delete(model);else modal.selected.add(model);render();});
@@ -310,6 +363,7 @@ function bind(){
 async function completeCurrentModel(){
   try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}
   catch(error){toast(error.message||'图片保存失败');return false;}
+  markTransferDirty(getBatch());save();
   releaseDraftPhoto();draft=freshDraft();render();setTimeout(()=>document.querySelector('#model')?.focus(),0);toast('图片已保存，可以输入下一个型号');return true;
 }
 
@@ -327,7 +381,7 @@ async function action(name){
   if(name==='save-color'){const c=document.querySelector('#newColor').value.trim();if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isNumericColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
   if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=input?.value.trim();if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isNumericColor(c)?'number':'text';save();render();toast(`已增加并选中 ${c}`);}
   if(name==='finish-color-manage'){syncDraft();colorManageMode=false;render();toast('颜色顺序已保存');}
-  if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);}));save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
+  if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>{batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);});markTransferDirty(batch);});save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
   if(name==='save-color-order'){if(!modal?.order?.length)return toast('没有可保存的颜色');state.colors=[...modal.order];save();modal=null;render();toast('颜色顺序已保存');}
   if(name==='toggle-stores'){syncDraft();const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
   if(name==='allocate'){
@@ -339,6 +393,7 @@ async function action(name){
     b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
     if(editing){const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));}
     for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:draft.unit==='pack'?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
+    markTransferDirty(b);
     save();
     const count=colors.length*draft.stores.length;
     const photoUpdate=editing?saveAndRenderModelPhoto(b,model,photoBlob,oldModel):null;
@@ -354,6 +409,33 @@ async function action(name){
   if(name==='clear-search'){detailSearchTerm='';render();setTimeout(()=>document.querySelector('#detailSearch')?.focus(),0);}
   if(name==='cancel-edit'){const returnToDetails=draft.editContext==='model';releaseDraftPhoto();draft=freshDraft();screen=returnToDetails?'details':'entry';render();}
   if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;await completeCurrentModel();}
+  if(name==='windows'){await openTransferPreview();}
+  if(name==='drive-settings'){modal={type:'drive-settings'};render();setTimeout(()=>document.querySelector('#googleClientId')?.focus(),0);}
+  if(name==='back-transfer-preview'){if(transferPreviewCache){modal={type:'transfer-preview',preview:transferPreviewCache};render();}else await openTransferPreview();}
+  if(name==='save-drive-settings'){
+    const input=document.querySelector('#googleClientId'),clientId=input?.value.trim()||'';
+    if(!/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(clientId))return toast('请输入正确的Google OAuth客户端ID');
+    const previous=V3Drive.loadSettings().clientId;
+    V3Drive.saveSettings({clientId});
+    if(previous&&previous!==clientId)V3Drive.clearFolderSettings();
+    try{
+      modal={type:'transfer-progress',stage:'login',title:'正在连接 Google Drive',detail:'请在Google窗口确认账号',progress:0};render();
+      await V3Drive.connect();await V3Drive.ensureFolders();
+      modal={type:'transfer-preview',preview:transferPreviewCache||await createTransferPreview(getBatch())};render();toast('Google Drive 已连接');
+    }catch(error){
+      modal={type:'drive-settings'};render();toast(error.message||'Google Drive连接失败');
+    }
+  }
+  if(name==='connect-drive'){
+    try{
+      modal={type:'transfer-progress',stage:'login',title:'正在连接 Google Drive',detail:'请在Google窗口确认账号',progress:0};render();
+      await V3Drive.connect();await V3Drive.ensureFolders();
+      modal={type:'transfer-preview',preview:transferPreviewCache||await createTransferPreview(getBatch())};render();toast('Google Drive 已连接');
+    }catch(error){await openTransferPreview(error.message||'Google Drive连接失败');}
+  }
+  if(name==='download-transfer'){await downloadTransferPackage();}
+  if(name==='send-windows'){await sendTransferPackage();}
+  if(name==='close-transfer-success'){modal=null;transferPreviewCache=null;transferPackageCache=null;render();}
   if(name==='photos'){await loadPhotoGallery();}
   if(name==='select-all-photos'){const filter=modal.filter||'pending',ready=modal.items.filter(item=>item.record?.renderedBlob&&(filter==='sent'?item.record?.sentAt:!item.record?.sentAt)).map(item=>item.model);modal.selected=ready.length&&ready.every(model=>modal.selected.has(model))?new Set():new Set(ready);render();}
   if(name==='refresh-photos'){revokeGalleryUrls();await loadPhotoGallery(true);toast('商品图片已重新生成');}
@@ -513,10 +595,162 @@ function saveSelectedPhotos(){
   selected.forEach((item,index)=>setTimeout(()=>download(item.record.renderedBlob,item.record.filename),index*250));
   toast(`正在保存 ${selected.length} 张图片`);
 }
-function exportExcel(b){
+function buildExcelArtifact(b){
   const rows=exportRows(b),stats=batchStats(b);const trs=rows.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(b.supplier)}</td><td>${b.date}</td><td>${esc(l.model)}</td><td>${money(l.cost)}</td><td>${money(l.sale)}</td><td>${esc(l.color)}</td><td>${l.unit==='pack'?'包':'件'}</td><td>${exportQuantity(l)}</td><td>${l.packSize}</td><td>${compactNumber(totalPieces(l))}</td><td>${l.store}</td><td>${pricePending(l.cost)?'待定':money(l.cost*totalPieces(l))}</td></tr>`).join('');
   const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>table{border-collapse:collapse}td,th{border:1px solid #999;padding:6px}th{background:#dfeee8}</style></head><body><table><tr><th colspan="13">采购单 - ${esc(b.supplier)} - ${b.date}</th></tr><tr><th>序号</th><th>供应商</th><th>日期</th><th>型号</th><th>进价</th><th>卖价</th><th>颜色</th><th>单位</th><th>数量</th><th>每包件数</th><th>总件数</th><th>门店</th><th>采购小计</th></tr>${trs}<tr><th colspan="10">合计</th><th>${stats.pieces}</th><th></th><th>${stats.hasPendingCost?'待定':money(stats.amount)}</th></tr></table></body></html>`;
-  download(new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),safeName(`采购单_${b.supplier}_${b.date}.xls`));toast('Excel 已导出');
+  return {blob:new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),name:safeName(`采购表_${b.supplier}_${b.date}.xls`)};
+}
+function exportExcel(b){
+  const output=buildExcelArtifact(b);
+  download(output.blob,output.name);toast('Excel 已导出');
+}
+function transferPackageName(batch){
+  const id=String(batch.id||'batch').slice(-8);
+  return safeName(`采购包_${batch.supplier}_${batch.date}_${id}.zip`);
+}
+function purchaseTransferData(batch){
+  const stats=batchStats(batch);
+  return {
+    schemaVersion:1,
+    batch:{
+      id:batch.id,
+      supplier:batch.supplier,
+      date:batch.date,
+      createdAt:batch.createdAt,
+      exportedAt:new Date().toISOString()
+    },
+    summary:{
+      models:stats.models,
+      pieces:stats.pieces,
+      amount:stats.hasPendingCost?null:Number(stats.amount.toFixed(2)),
+      hasPendingCost:stats.hasPendingCost,
+      lines:batch.lines.length
+    },
+    lines:[...batch.lines].sort((a,z)=>(a.createdAt||0)-(z.createdAt||0)||a.store-z.store).map(line=>({
+      id:line.id,
+      model:line.model,
+      cost:pricePending(line.cost)?null:Number(line.cost),
+      sale:pricePending(line.sale)?null:Number(line.sale),
+      unit:line.unit,
+      packSize:Number(line.packSize)||1,
+      quantity:Number(line.qty),
+      color:line.color||'',
+      store:Number(line.store),
+      note:line.note||'',
+      totalPieces:totalPieces(line),
+      createdAt:line.createdAt||null
+    }))
+  };
+}
+async function collectTransferPhotos(batch){
+  const models=modelDetailGroups(batch,'input').map(item=>item.model),photos=[],missingModels=[];
+  for(const model of models){
+    let record=await V3Photos.get(batch.id,model);
+    if(record?.sourceBlob&&(record.dirty||!record.renderedBlob||record.renderVersion!==PHOTO_RENDER_VERSION)){
+      try{await regenerateModelPhoto(batch,model);record=await V3Photos.get(batch.id,model);}
+      catch(error){}
+    }
+    if(record?.renderedBlob)photos.push({model,blob:record.renderedBlob,filename:record.filename||`${photoNamePart(model)}.jpg`});
+    else missingModels.push(model);
+  }
+  return {models,photos,missingModels};
+}
+async function createTransferPreview(batch){
+  const collection=await collectTransferPhotos(batch),excel=buildExcelArtifact(batch);
+  const jsonBytes=new Blob([JSON.stringify(purchaseTransferData(batch))]).size;
+  const imageBytes=collection.photos.reduce((sum,item)=>sum+item.blob.size,0);
+  return {
+    batch:{id:batch.id,supplier:batch.supplier,date:batch.date},
+    models:collection.models,
+    readyCount:collection.photos.length,
+    missingModels:collection.missingModels,
+    lineCount:batch.lines.length,
+    estimatedBytes:imageBytes+excel.blob.size+jsonBytes+4096,
+    packageName:transferPackageName(batch)
+  };
+}
+async function buildTransferPackage(batch,onStage=()=>{}){
+  onStage('正在整理商品图片');
+  const collection=await collectTransferPhotos(batch);
+  onStage('正在生成Excel和采购清单');
+  const excel=buildExcelArtifact(batch),purchase=purchaseTransferData(batch),createdAt=new Date();
+  const purchaseBlob=new Blob([JSON.stringify(purchase,null,2)],{type:'application/json'});
+  const fileList=[
+    {name:excel.name,type:'excel',size:excel.blob.size},
+    {name:'purchase.json',type:'data',size:purchaseBlob.size},
+    ...collection.photos.map(item=>({name:`images/${item.filename}`,type:'image',model:item.model,size:item.blob.size}))
+  ];
+  const manifest={
+    schemaVersion:1,
+    app:'采易单 V3',
+    packageName:transferPackageName(batch),
+    batchId:batch.id,
+    supplier:batch.supplier,
+    purchaseDate:batch.date,
+    generatedAt:createdAt.toISOString(),
+    models:collection.models.length,
+    images:collection.photos.length,
+    missingModels:collection.missingModels,
+    files:fileList
+  };
+  const manifestBlob=new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'});
+  const entries=[
+    {name:excel.name,data:excel.blob,date:createdAt},
+    {name:'purchase.json',data:purchaseBlob,date:createdAt},
+    {name:'manifest.json',data:manifestBlob,date:createdAt},
+    ...collection.photos.map(item=>({name:`images/${item.filename}`,data:item.blob,date:createdAt}))
+  ];
+  onStage('正在生成ZIP采购包');
+  const blob=await V3Drive.zip(entries);
+  return {blob,name:manifest.packageName,manifest};
+}
+async function openTransferPreview(error=''){
+  const batch=getBatch();
+  if(!batch?.lines.length)return toast('当前批次没有可发送的采购数据');
+  modal={type:'transfer-progress',stage:'prepare',title:'正在检查采购资料',detail:'正在统计图片和Excel',progress:0};render();
+  try{
+    transferPreviewCache=await createTransferPreview(batch);
+    modal={type:'transfer-preview',preview:transferPreviewCache,error};render();
+  }catch(exception){
+    modal=null;render();toast(exception.message||'采购资料检查失败');
+  }
+}
+async function downloadTransferPackage(){
+  const batch=getBatch();
+  modal={type:'transfer-progress',stage:'build',title:'正在生成采购包',detail:'完成后会保存到当前设备',progress:0};render();
+  try{
+    transferPackageCache=await buildTransferPackage(batch,detail=>{if(modal?.type==='transfer-progress'){modal.detail=detail;render();}});
+    download(transferPackageCache.blob,transferPackageCache.name);
+    await openTransferPreview();
+    toast('ZIP采购包已保存');
+  }catch(error){
+    await openTransferPreview(error.message||'ZIP采购包生成失败');
+  }
+}
+async function sendTransferPackage(){
+  const batch=getBatch();
+  if(!V3Drive.isConfigured()){modal={type:'drive-settings'};render();return;}
+  try{
+    modal={type:'transfer-progress',stage:'login',title:'正在连接 Google Drive',detail:'请在Google窗口确认账号',progress:0};render();
+    await V3Drive.connect();
+    modal={type:'transfer-progress',stage:'build',title:'正在生成采购包',detail:'正在整理本批图片和Excel',progress:0};render();
+    transferPackageCache=await buildTransferPackage(batch,detail=>{if(modal?.type==='transfer-progress'){modal.detail=detail;render();}});
+    modal={type:'transfer-progress',stage:'upload',title:'正在发送到 Windows',detail:transferPackageCache.name,progress:0};render();
+    let renderedProgress=-1;
+    const upload=await V3Drive.uploadPackage(transferPackageCache.blob,transferPackageCache.name,batch.transfer?.fileId||'',progress=>{
+      if(progress===renderedProgress)return;
+      renderedProgress=progress;
+      if(modal?.type==='transfer-progress'){modal.progress=progress;render();}
+    });
+    const sentAt=Date.now();
+    batch.transfer={status:'sent',fileId:upload.id,fileName:upload.name||transferPackageCache.name,webViewLink:upload.webViewLink||'',folderId:upload.folderId,sentAt,size:transferPackageCache.blob.size};
+    save();
+    modal={type:'transfer-success',result:{name:batch.transfer.fileName,webViewLink:batch.transfer.webViewLink,size:batch.transfer.size,sentAt}};render();
+  }catch(error){
+    batch.transfer={...(batch.transfer||{}),status:'failed',failedAt:Date.now(),lastError:error.message||'发送失败'};
+    save();
+    await openTransferPreview(error.message||'发送到Windows失败');
+  }
 }
 
 function buildPdf(b){
@@ -558,6 +792,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=15',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=16',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
