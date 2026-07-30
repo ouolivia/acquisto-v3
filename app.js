@@ -407,21 +407,21 @@ function wrapCanvasText(context,text,maxWidth){
 function wrapStoreTokens(context,stores,maxWidth){
   const output=[];let current='';
   stores.map(String).forEach((store,index)=>{
-    const token=index<stores.length-1?`${store},`:store;
+    const token=index<stores.length-1?`${store}, `:store;
     const next=current?`${current}${token}`:token;
     if(!current||context.measureText(next).width<=maxWidth)current=next;
-    else{output.push(current);current=token;}
+    else{output.push(current.trimEnd());current=token;}
   });
-  if(current)output.push(current);
+  if(current)output.push(current.trimEnd());
   return output.length?output:[''];
 }
 async function createProductImage(batch,model,sourceBlob){
   const lines=batch.lines.filter(line=>line.model===model);
   if(!lines.length)throw new Error('找不到型号采购数据');
   const first=lines[0],allocations=imageAllocationRows(lines),photo=await V3Photos.loadImage(sourceBlob);
-  const W=1080,photoH=1440,headerH=112,rowPad=18,lineH=52;
+  const W=1080,photoH=1440,headerH=112,rowPad=18,lineH=58;
   const measureCanvas=document.createElement('canvas'),measure=measureCanvas.getContext('2d');
-  measure.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+  measure.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   const prepared=allocations.map(group=>{
     const storeLines=wrapStoreTokens(measure,group.stores,650);
     return {...group,storeLines,height:rowPad*2+storeLines.length*lineH};
@@ -438,14 +438,14 @@ async function createProductImage(batch,model,sourceBlob){
   const border='#e4e4e4';c.strokeStyle=border;c.lineWidth=2;
   const separator=y=>{c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();};
   separator(photoH);
-  const headerY=photoH,costSale=`${pricePending(first.cost)?'待定':`€${photoPrice(first.cost)}`}/${pricePending(first.sale)?'待定':`€${photoPrice(first.sale)}`}`;
+  const headerY=photoH,costSale=`${pricePending(first.cost)?'待定':euro(first.cost)} / ${pricePending(first.sale)?'待定':euro(first.sale)}`;
   c.textBaseline='middle';c.fillStyle='#171717';
   const modelSize=fitCanvasText(c,model,300,50,30,'700');c.font=`700 ${modelSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='left';c.fillText(model,28,headerY+headerH/2);
   const priceSize=fitCanvasText(c,costSale,380,48,28,'700');c.font=`700 ${priceSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='center';c.fillText(costSale,560,headerY+headerH/2);
   c.fillStyle='#aaa';
   const supplierSize=fitCanvasText(c,batch.supplier,240,30,20,'500');c.font=`500 ${supplierSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='right';c.fillText(batch.supplier,W-28,headerY+headerH/2);
   let y=photoH+headerH;separator(y);
-  c.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+  c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   for(const row of prepared){
     const top=y;c.fillStyle='#222';c.textBaseline='middle';
     row.storeLines.forEach((storeLine,index)=>{
@@ -453,7 +453,7 @@ async function createProductImage(batch,model,sourceBlob){
       c.textAlign='left';
       const colorSize=fitCanvasText(c,row.color,125,40,22,'600');
       c.font=`600 ${colorSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.fillText(index===0?row.color:'',28,lineY);
-      c.font='40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(storeLine,170,lineY);
+      c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(storeLine,170,lineY);
       if(index===0){c.textAlign='right';c.font='700 42px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(`× ${row.quantity}`,W-28,lineY);}
     });
     y+=row.height;separator(y);
@@ -522,7 +522,7 @@ function exportExcel(b){
 function buildPdf(b){
   if(!b.lines.length)return toast('没有可导出的明细');
   const W=1240,H=1754,margin=24,tableW=W-margin*2,headerH=43,pageBottom=H-48;
-  const widths=[220,150,380,125,120,tableW-995],heads=['商品型号','颜色','门店','数量','进价','备注'];
+  const widths=[205,135,350,90,115,110,tableW-1005],heads=['商品型号','颜色','门店','门店数','数量','进价','备注'];
   const models=modelDetailGroups(b,'input').map(m=>({...m,items:m.items.map(g=>({...g,displayColors:g.colors.filter(Boolean)}))}));
   const pages=[];let canvas,c,y;
   const fontFamily='Songti SC, STSong, SimSun, PingFang SC, serif';
@@ -531,10 +531,11 @@ function buildPdf(b){
   const wrap=(text,maxWidth,font='29px')=>{c.save();c.font=`${font} ${fontFamily}`;const lines=[];let current='';for(const ch of Array.from(String(text??''))){if(ch==='\n'){lines.push(current);current='';continue;}const next=current+ch;if(!current||c.measureText(next).width<=maxWidth)current=next;else{lines.push(current.trimEnd());current=ch.trimStart();}}if(current||!lines.length)lines.push(current);c.restore();return lines;};
   const wrapStores=(stores,maxWidth,font='29px')=>{c.save();c.font=`${font} ${fontFamily}`;const values=stores.map(String),lines=[];let current='';values.forEach((store,i)=>{const next=current?`${current}, ${store}`:store;const reserve=i<values.length-1?',':'';if(!current||c.measureText(next+reserve).width<=maxWidth)current=next;else{lines.push(`${current},`);current=store;}});if(current||!lines.length)lines.push(current);c.restore();return lines;};
   const multiline=(lines,x,w,top,height,font='29px')=>{const lh=37,total=(lines.length-1)*lh;c.save();c.fillStyle='#111';c.font=`${font} ${fontFamily}`;c.textAlign='center';c.textBaseline='middle';lines.forEach((v,i)=>c.fillText(v,x+w/2,top+height/2-total/2+i*lh));c.restore();};
+  const multilineLeft=(lines,x,w,top,height,font='29px')=>{const lh=37,total=(lines.length-1)*lh;c.save();c.fillStyle='#111';c.font=`${font} ${fontFamily}`;c.textAlign='left';c.textBaseline='middle';lines.forEach((v,i)=>c.fillText(v,x+14,top+height/2-total/2+i*lh));c.restore();};
   const itemHeight=item=>Math.max(63,24+Math.max(1,item.displayColors.length,wrapStores(item.stores,widths[2]-28).length)*37);
   const newPage=()=>{if(canvas)pages.push(canvas.toDataURL('image/jpeg',.94));canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,W,H);c.fillStyle='#111';c.textAlign='center';c.textBaseline='alphabetic';c.font=`bold 38px ${fontFamily}`;c.fillText('小潘家采购分货单',W/2,58);c.textAlign='left';c.font=`29px ${fontFamily}`;c.fillText(`供应商名称：${b.supplier}`,margin+7,101);const [year,month,day]=String(b.date||'').split('-').map(Number);c.textAlign='right';c.fillText(`${year||''}年　${month||''}　月　${day||''}　日`,W-margin-7,101);y=112;c.fillStyle='#c7c7c7';c.fillRect(margin,y,tableW,headerH);let x=margin;heads.forEach((h,i)=>{centered(h,x,widths[i],y,headerH,'bold 25px');x+=widths[i];});line(margin,y,W-margin,y);line(margin,y+headerH,W-margin,y+headerH);x=margin;for(const w of widths){line(x,y,x,y+headerH);x+=w;}line(W-margin,y,W-margin,y+headerH);y+=headerH;};
   newPage();
-  for(const model of models){const heights=model.items.map(itemHeight),modelLines=wrap(model.model,widths[0]-16,'30px'),modelH=24+modelLines.length*37,noteLines=wrap(model.note||'',widths[5]-24,'24px'),noteH=model.note?24+noteLines.length*31:63;let groupH=heights.reduce((s,n)=>s+n,0),requiredH=Math.max(modelH,noteH);if(requiredH>groupH){heights[heights.length-1]+=requiredH-groupH;groupH=requiredH;}const pageCapacity=pageBottom-(112+headerH);if(groupH<=pageCapacity&&y+groupH>pageBottom)newPage();let i=0;while(i<model.items.length){if(y+heights[i]>pageBottom)newPage();const startY=y,startIndex=i,xModel=margin,xColor=xModel+widths[0],xStores=xColor+widths[1],xQty=xStores+widths[2],xCost=xQty+widths[3],xNote=xCost+widths[4];while(i<model.items.length&&y+heights[i]<=pageBottom){const item=model.items[i],h=heights[i],colors=item.displayColors.length?item.displayColors:[''];multiline(colors,xColor,widths[1],y,h);multiline(wrapStores(item.stores,widths[2]-28),xStores,widths[2],y,h);centered(pdfQuantity(item),xQty,widths[3],y,h,'27px');y+=h;i++;if(i<model.items.length&&y+heights[i]<=pageBottom)line(xColor,y,xCost,y,true);}const endY=y;multiline(modelLines,xModel,widths[0],startY,endY-startY,'30px');centered(euro(model.cost),xCost,widths[4],startY,endY-startY,'27px');if(model.note)multiline(noteLines,xNote,widths[5],startY,endY-startY,'24px');line(margin,startY,W-margin,startY);line(margin,endY,W-margin,endY);for(const x of [xModel,xColor,xStores,xQty,xCost,xNote,W-margin])line(x,startY,x,endY);if(i===startIndex)break;if(i<model.items.length)newPage();}}
+  for(const model of models){const heights=model.items.map(itemHeight),modelLines=wrap(model.model,widths[0]-16,'30px'),modelH=24+modelLines.length*37,noteLines=wrap(model.note||'',widths[6]-24,'24px'),noteH=model.note?24+noteLines.length*31:63;let groupH=heights.reduce((s,n)=>s+n,0),requiredH=Math.max(modelH,noteH);if(requiredH>groupH){heights[heights.length-1]+=requiredH-groupH;groupH=requiredH;}const pageCapacity=pageBottom-(112+headerH);if(groupH<=pageCapacity&&y+groupH>pageBottom)newPage();let i=0;while(i<model.items.length){if(y+heights[i]>pageBottom)newPage();const startY=y,startIndex=i,xModel=margin,xColor=xModel+widths[0],xStores=xColor+widths[1],xStoreCount=xStores+widths[2],xQty=xStoreCount+widths[3],xCost=xQty+widths[4],xNote=xCost+widths[5];while(i<model.items.length&&y+heights[i]<=pageBottom){const item=model.items[i],h=heights[i],colors=item.displayColors.length?item.displayColors:[''];multiline(colors,xColor,widths[1],y,h);multilineLeft(wrapStores(item.stores,widths[2]-28),xStores,widths[2],y,h);centered(`${item.stores.length}家`,xStoreCount,widths[3],y,h,'25px');centered(pdfQuantity(item),xQty,widths[4],y,h,'27px');y+=h;i++;if(i<model.items.length&&y+heights[i]<=pageBottom)line(xColor,y,xCost,y,true);}const endY=y;multiline(modelLines,xModel,widths[0],startY,endY-startY,'30px');centered(euro(model.cost),xCost,widths[5],startY,endY-startY,'27px');if(model.note)multiline(noteLines,xNote,widths[6],startY,endY-startY,'24px');line(margin,startY,W-margin,startY);line(margin,endY,W-margin,endY);for(const x of [xModel,xColor,xStores,xStoreCount,xQty,xCost,xNote,W-margin])line(x,startY,x,endY);if(i===startIndex)break;if(i<model.items.length)newPage();}}
   pages.push(canvas.toDataURL('image/jpeg',.94));
   const pdf=jpegPagesToPdf(pages,W,H),name=safeName(`采购单_${b.supplier}_${b.date}.pdf`),file=new File([pdf],name,{type:'application/pdf'});
   return {pdf,name,file,pages,supplier:b.supplier};
@@ -557,6 +558,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=13',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=14',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
