@@ -162,7 +162,7 @@ function detailsView(){
   const modelGroups=modelDetailGroups(b,'input').reverse(),transfer=transferStatus(b);
   return `${header('采购明细',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="detail-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg><input id="detailSearch" value="${esc(detailSearchTerm)}" placeholder="模糊搜索当前采购型号" autocomplete="off"><button data-action="clear-search" aria-label="清除搜索">×</button></section>
-    <section class="card no-print transfer-launch-card"><button class="windows-transfer-button" data-action="windows"><span class="windows-transfer-icon">W</span><span><b>发送到 Windows</b><small>全部图片＋Excel · 一个批次一个ZIP</small></span><i>›</i></button><div class="windows-transfer-state ${transfer.key}"><span></span>${esc(transfer.label)}</div></section>
+    <section class="card no-print transfer-launch-card"><button class="windows-transfer-button" data-action="windows"><span class="windows-transfer-icon">W</span><span><b>发送到 Windows</b></span><i>›</i></button><div class="windows-transfer-state ${transfer.key}"><span></span>${esc(transfer.label)}</div></section>
     <section class="card no-print"><div class="toolbar detail-toolbar"><button class="btn btn-secondary" data-action="photos">图片分享</button><button class="btn btn-secondary" data-action="summary">查看汇总</button><button class="btn btn-secondary" data-action="excel">导出 Excel</button><button class="btn btn-secondary" data-action="pdf">导出 PDF</button></div></section>
     <div id="modelList">${modelGroups.length?modelGroups.map(m=>`<div class="swipe-wrap" data-search-model="${esc(m.model.toLowerCase())}"><div class="swipe-actions no-print"><button data-edit-model="${esc(m.model)}">修改</button><button class="delete" data-delete-model="${esc(m.model)}">删除</button></div><section class="card purchase-model swipe-content"><div class="purchase-top"><b>${esc(m.model)}</b><span class="purchase-price"><i>进价/卖价</i><strong>${priceDisplay(m.cost)} <em>/</em> ${priceDisplay(m.sale)}</strong></span></div>${m.note?`<div class="model-note-detail"><span>备注</span><p>${esc(m.note)}</p></div>`:''}<div class="color-list">${m.items.map(g=>{const colors=g.colors.filter(Boolean);return `<div class="color-row"><div class="color-info ${colors.length?'':'no-color'}">${colors.length?`<small>${colors.map(esc).join('　')}</small>`:''}<p>门店 ${g.stores.join(', ')} <strong>× ${quantityDisplay(g)}</strong></p></div></div>`;}).join('')}</div></section></div>`).join(''):`<div class="card empty"><div class="empty-icon">📦</div>还没有分配商品</div>`}</div>
   </div><nav class="bottom"><div class="bottom-inner"><button class="btn btn-light" data-action="home-from-details">采购列表</button><button class="btn btn-primary" data-action="continue">继续录入</button></div></nav>`;
@@ -442,7 +442,7 @@ async function action(name){
   if(name==='share-photos')await shareSelectedPhotos();
   if(name==='save-photos')saveSelectedPhotos();
   if(name==='summary'){modal={type:'summary',sortKey:'store',sortDir:'asc'};render();}
-  if(name==='excel')exportExcel(getBatch());
+  if(name==='excel')await exportExcel(getBatch());
   if(name==='pdf'){const output=buildPdf(getBatch());if(output){modal={type:'pdf-preview',output};render();}}
   if(name==='export-pdf-file'){const output=modal?.output;modal=null;render();if(output)deliverPdf(output);}
 }
@@ -595,13 +595,99 @@ function saveSelectedPhotos(){
   selected.forEach((item,index)=>setTimeout(()=>download(item.record.renderedBlob,item.record.filename),index*250));
   toast(`正在保存 ${selected.length} 张图片`);
 }
-function buildExcelArtifact(b){
-  const rows=exportRows(b),stats=batchStats(b);const trs=rows.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(b.supplier)}</td><td>${b.date}</td><td>${esc(l.model)}</td><td>${money(l.cost)}</td><td>${money(l.sale)}</td><td>${esc(l.color)}</td><td>${l.unit==='pack'?'包':'件'}</td><td>${exportQuantity(l)}</td><td>${l.packSize}</td><td>${compactNumber(totalPieces(l))}</td><td>${l.store}</td><td>${pricePending(l.cost)?'待定':money(l.cost*totalPieces(l))}</td></tr>`).join('');
-  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>table{border-collapse:collapse}td,th{border:1px solid #999;padding:6px}th{background:#dfeee8}</style></head><body><table><tr><th colspan="13">采购单 - ${esc(b.supplier)} - ${b.date}</th></tr><tr><th>序号</th><th>供应商</th><th>日期</th><th>型号</th><th>进价</th><th>卖价</th><th>颜色</th><th>单位</th><th>数量</th><th>每包件数</th><th>总件数</th><th>门店</th><th>采购小计</th></tr>${trs}<tr><th colspan="10">合计</th><th>${stats.pieces}</th><th></th><th>${stats.hasPendingCost?'待定':money(stats.amount)}</th></tr></table></body></html>`;
-  return {blob:new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}),name:safeName(`采购表_${b.supplier}_${b.date}.xls`)};
+function xlsxXml(value){
+  return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[char]));
 }
-function exportExcel(b){
-  const output=buildExcelArtifact(b);
+function xlsxColumn(index){
+  let value=index+1,result='';
+  while(value){result=String.fromCharCode(65+(value-1)%26)+result;value=Math.floor((value-1)/26);}
+  return result;
+}
+function xlsxCell(ref,value,style=0){
+  if(value===null||value===''||typeof value==='undefined')return '';
+  if(typeof value==='number'&&Number.isFinite(value))return `<c r="${ref}" s="${style}"><v>${value}</v></c>`;
+  const text=String(value),space=/^\s|\s$/.test(text)?' xml:space="preserve"':'';
+  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t${space}>${xlsxXml(text)}</t></is></c>`;
+}
+function excelModelRows(batch){
+  const groups=new Map();
+  for(const line of [...batch.lines].sort((a,z)=>(a.createdAt||0)-(z.createdAt||0))){
+    if(!groups.has(line.model))groups.set(line.model,{
+      model:line.model,
+      cost:pricePending(line.cost)?null:Number(line.cost),
+      sale:pricePending(line.sale)?null:Number(line.sale),
+      stores:new Map()
+    });
+    const row=groups.get(line.model),store=Number(line.store);
+    row.stores.set(store,(row.stores.get(store)||0)+totalPieces(line));
+  }
+  return [...groups.values()];
+}
+async function buildExcelArtifact(batch){
+  const headers=['供应商','采购日期','型号','进价','卖价','图片名称',...Array.from({length:20},(_,i)=>`N${i+1}`)];
+  const rows=excelModelRows(batch);
+  const headerCells=headers.map((value,index)=>xlsxCell(`${xlsxColumn(index)}1`,value,1)).join('');
+  const bodyRows=rows.map((row,rowIndex)=>{
+    const values=[
+      batch.supplier,
+      batch.date,
+      row.model,
+      row.cost,
+      row.sale,
+      photoFilename(row.model,row.cost,row.sale),
+      ...Array.from({length:20},(_,index)=>row.stores.has(index+1)?Number(row.stores.get(index+1).toFixed(2)):null)
+    ];
+    const cells=values.map((value,columnIndex)=>{
+      const style=columnIndex===1?2:(columnIndex===3||columnIndex===4?3:(columnIndex>=6?4:0));
+      return xlsxCell(`${xlsxColumn(columnIndex)}${rowIndex+2}`,value,style);
+    }).join('');
+    return `<row r="${rowIndex+2}" ht="21" customHeight="1">${cells}</row>`;
+  }).join('');
+  const lastRow=Math.max(1,rows.length+1),lastColumn=xlsxColumn(headers.length-1);
+  const columnWidths=[
+    [1,1,16],[2,2,13],[3,3,18],[4,5,11],[6,6,34],[7,26,7]
+  ].map(([min,max,width])=>`<col min="${min}" max="${max}" width="${width}" customWidth="1"/>`).join('');
+  const worksheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  <cols>${columnWidths}</cols>
+  <sheetData><row r="1" ht="27" customHeight="1">${headerCells}</row>${bodyRows}</sheetData>
+  <autoFilter ref="A1:${lastColumn}${lastRow}"/>
+  <pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
+</worksheet>`;
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="0.00"/></numFmts>
+  <fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Aptos"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F5748"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border/><border><left style="thin"><color rgb="FFD6DDD9"/></left><right style="thin"><color rgb="FFD6DDD9"/></right><top style="thin"><color rgb="FFD6DDD9"/></top><bottom style="thin"><color rgb="FFD6DDD9"/></bottom></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="5">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+  const created=new Date(),entries=[
+    {name:'[Content_Types].xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`},
+    {name:'_rels/.rels',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`},
+    {name:'docProps/app.xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>采易单 V3</Application></Properties>`},
+    {name:'docProps/core.xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>采易单 V3</dc:creator><cp:lastModifiedBy>采易单 V3</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${created.toISOString()}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${created.toISOString()}</dcterms:modified></cp:coreProperties>`},
+    {name:'xl/workbook.xml',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="采购数据" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029"/></workbook>`},
+    {name:'xl/_rels/workbook.xml.rels',data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml',data:styles},
+    {name:'xl/worksheets/sheet1.xml',data:worksheet}
+  ].map(entry=>({...entry,data:new Blob([entry.data],{type:'application/xml'}),date:created}));
+  const zip=await V3Drive.zip(entries);
+  const blob=zip.slice(0,zip.size,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  return {blob,name:safeName(`ACQUISTO ${batch.supplier}_${batch.date}.xlsx`)};
+}
+async function exportExcel(b){
+  const output=await buildExcelArtifact(b);
   download(output.blob,output.name);toast('Excel 已导出');
 }
 function transferPackageName(batch){
@@ -656,7 +742,7 @@ async function collectTransferPhotos(batch){
   return {models,photos,missingModels};
 }
 async function createTransferPreview(batch){
-  const collection=await collectTransferPhotos(batch),excel=buildExcelArtifact(batch);
+  const collection=await collectTransferPhotos(batch),excel=await buildExcelArtifact(batch);
   const jsonBytes=new Blob([JSON.stringify(purchaseTransferData(batch))]).size;
   const imageBytes=collection.photos.reduce((sum,item)=>sum+item.blob.size,0);
   return {
@@ -673,7 +759,7 @@ async function buildTransferPackage(batch,onStage=()=>{}){
   onStage('正在整理商品图片');
   const collection=await collectTransferPhotos(batch);
   onStage('正在生成Excel和采购清单');
-  const excel=buildExcelArtifact(batch),purchase=purchaseTransferData(batch),createdAt=new Date();
+  const excel=await buildExcelArtifact(batch),purchase=purchaseTransferData(batch),createdAt=new Date();
   const purchaseBlob=new Blob([JSON.stringify(purchase,null,2)],{type:'application/json'});
   const fileList=[
     {name:excel.name,type:'excel',size:excel.blob.size},
