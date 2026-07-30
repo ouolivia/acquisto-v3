@@ -45,7 +45,7 @@
   }
   async function saveSource(batchId,model,sourceBlob){
     const current=await get(batchId,model);
-    return put({...(current||{}),batchId,model,sourceBlob,renderedBlob:null,filename:'',dirty:true});
+    return put({...(current||{}),batchId,model,sourceBlob,renderedBlob:null,filename:'',dirty:true,sentAt:null});
   }
   async function saveRendered(batchId,model,renderedBlob,filename,renderVersion=1){
     const current=await get(batchId,model);
@@ -54,7 +54,11 @@
   }
   async function markDirty(batchId,model){
     const current=await get(batchId,model);
-    if(current)return put({...current,dirty:true});
+    if(current)return put({...current,dirty:true,sentAt:null});
+  }
+  async function markSent(batchId,model,sentAt=Date.now()){
+    const current=await get(batchId,model);
+    if(current?.renderedBlob)return put({...current,sentAt});
   }
   async function remove(batchId,model){
     return transaction('readwrite',store=>store.delete(key(batchId,model)));
@@ -125,5 +129,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,markDirty,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,markDirty,markSent,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
 })();

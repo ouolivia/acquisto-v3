@@ -25,6 +25,7 @@ function money(v){ return pricePending(v)?'待定':Number(v).toFixed(2); }
 function euro(v){ return pricePending(v)?'待定':Number(v).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function priceDisplay(v){ return pricePending(v)?'待定':`€${money(v)}`; }
 function draftPrice(v){ return pricePending(v)?'':String(v); }
+function sentTime(v){ if(!v)return ''; return new Date(v).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 function grossMarginDisplay(cost,sale){
   if(String(cost??'').trim()===''||String(sale??'').trim()==='')return '待计算';
   const costValue=Number(cost),saleValue=Number(sale);
@@ -155,8 +156,18 @@ function detailsView(){
 
 function modalView(){
   if(modal.type==='photo-gallery'){
-    const selected=modal.selected||new Set(),ready=modal.items.filter(item=>item.record?.renderedBlob);
-    return `<div class="modal-backdrop centered-modal"><section class="modal photo-gallery-modal" role="dialog" aria-modal="true" aria-label="商品图片分享"><div class="photo-gallery-head"><div><h2>商品图片</h2><p>${esc(getBatch().supplier)} · 已保存 ${ready.length}/${modal.items.length} 张</p></div><button data-action="close-modal" aria-label="关闭图片分享">×</button></div><div class="photo-gallery-tools"><button class="btn btn-light" data-action="select-all-photos">${selected.size===ready.length&&ready.length?'取消全选':'全选'}</button><button class="btn btn-light" data-action="refresh-photos">重新生成</button></div><p class="photo-gallery-status">已选 ${selected.size} 张；批量分享会打开手机系统分享面板，再选择微信工作群。</p><div class="photo-grid">${modal.items.map(item=>`<button class="photo-item ${selected.has(item.model)?'selected':''}" data-photo-model="${esc(item.model)}" ${item.record?.renderedBlob?'':'disabled'}>${item.url?`<img src="${item.url}" alt="${esc(item.model)} 商品图片">`:'<span class="photo-missing">缺少照片</span>'}<b>${esc(item.model)}</b><small>${item.record?.renderedBlob?esc(item.record.filename):'未拍照'}</small>${selected.has(item.model)?'<i>✓</i>':''}</button>`).join('')}</div><div class="photo-gallery-actions"><button class="btn btn-light" data-action="save-photos">保存选中图片</button><button class="btn btn-primary" data-action="share-photos">批量分享到工作群</button></div></section></div>`;
+    const selected=modal.selected||new Set(),filter=modal.filter||'pending';
+    const ready=modal.items.filter(item=>item.record?.renderedBlob),pending=modal.items.filter(item=>!item.record?.sentAt),sent=modal.items.filter(item=>item.record?.sentAt);
+    const visible=filter==='sent'?sent:pending,selectable=visible.filter(item=>item.record?.renderedBlob);
+    const allSelected=selectable.length>0&&selectable.every(item=>selected.has(item.model));
+    return `<div class="modal-backdrop centered-modal photo-gallery-backdrop"><section class="modal photo-gallery-modal" role="dialog" aria-modal="true" aria-label="商品图片分享">
+      <div class="photo-gallery-head"><div><span>图片中心</span><h2>${esc(getBatch().supplier)}</h2><p>共 ${ready.length} 张可分享图片</p></div><button data-action="close-modal" aria-label="关闭图片分享">×</button></div>
+      <div class="photo-gallery-tabs" role="tablist" aria-label="图片发送状态"><button type="button" role="tab" aria-selected="${filter==='pending'}" class="${filter==='pending'?'active':''}" data-photo-filter="pending"><span>待发送</span><b>${pending.length}</b></button><button type="button" role="tab" aria-selected="${filter==='sent'}" class="${filter==='sent'?'active':''}" data-photo-filter="sent"><span>已发送</span><b>${sent.length}</b></button></div>
+      <div class="photo-gallery-toolbar"><p>${filter==='pending'?'选择图片后批量发送到工作群':'已发送图片可以再次分享'}</p><div><button type="button" data-action="select-all-photos">${allSelected?'取消全选':'全选'}</button><button type="button" data-action="refresh-photos">更新图片</button></div></div>
+      <div class="photo-grid">${visible.length?visible.map(item=>`<button class="photo-item ${selected.has(item.model)?'selected':''} ${item.record?.sentAt?'sent':''}" data-photo-model="${esc(item.model)}" ${item.record?.renderedBlob?'':'disabled'}><span class="photo-thumb">${item.url?`<img src="${item.url}" alt="${esc(item.model)} 商品图片">`:'<span class="photo-missing">缺少照片</span>'}${selected.has(item.model)?'<i class="photo-select-mark">✓</i>':''}${item.record?.sentAt?'<i class="photo-sent-mark">已发送</i>':''}</span><b>${esc(item.model)}</b><small>${item.record?.sentAt?esc(sentTime(item.record.sentAt)):(item.record?.renderedBlob?'待发送':'未拍照')}</small></button>`).join(''):`<div class="photo-gallery-empty"><strong>${filter==='pending'?'全部发送完成':'还没有已发送图片'}</strong><span>${filter==='pending'?'新录入或修改后的图片会显示在这里':'发送成功后，图片会自动归档到这里'}</span></div>`}</div>
+      <p class="photo-gallery-status">已选 ${selected.size} 张</p>
+      <div class="photo-gallery-actions"><button class="btn btn-light" data-action="save-photos">保存图片</button><button class="btn btn-primary" data-action="share-photos">${filter==='sent'?'再次分享':'发送到工作群'}</button></div>
+    </section></div>`;
   }
   if(modal.type==='color') return `<div class="modal-backdrop centered-modal"><div class="modal color-add-modal"><div class="color-manager-head"><span class="color-manager-icon color-add-icon">＋</span><div><h2>增加颜色</h2><p class="modal-hint">支持数字编号、外文或中文颜色，增加后会自动选中。</p></div></div><div class="color-add-field"><label for="newColor">颜色名称或编号</label><input id="newColor" class="field" placeholder="例如：-5、rosso、红" autocomplete="off"></div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-color">增加并选中</button></div></div></div>`;
   if(modal.type==='edit-colors') return `<div class="modal-backdrop centered-modal"><div class="modal color-manager"><div class="color-manager-head"><span class="color-manager-icon">${icon('edit')}</span><div><h2>修改全部颜色</h2><p class="modal-hint">直接修改名称，保存后所有采购记录中的对应颜色会同步更新。</p></div></div><div class="color-edit-list">${state.colors.map((c,i)=>`<div><label>${i+1}</label><input class="field" data-color-original="${esc(c)}" value="${esc(c)}" autocomplete="off"></div>`).join('')}</div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-colors-edit">保存全部</button></div></div></div>`;
@@ -228,6 +239,7 @@ function bind(){
     x.onpointercancel=finish;
   });
   document.querySelectorAll('[data-summary-sort]').forEach(x=>x.onclick=()=>{const key=x.dataset.summarySort;modal.sortDir=modal.sortKey===key&&modal.sortDir==='asc'?'desc':'asc';modal.sortKey=key;render();});
+  document.querySelectorAll('[data-photo-filter]').forEach(x=>x.onclick=()=>{modal.filter=x.dataset.photoFilter;modal.selected=new Set();render();});
   document.querySelectorAll('[data-sort-color]').forEach(x=>{
     x.onclick=()=>{const target=x.dataset.sortColor;if(!modal.selected){modal.selected=target;render();return;}if(modal.selected===target){modal.selected=null;render();return;}const from=modal.order.indexOf(modal.selected),to=modal.order.indexOf(target);if(from>=0&&to>=0){const [moving]=modal.order.splice(from,1);modal.order.splice(to,0,moving);}modal.selected=null;render();};
   });
@@ -264,7 +276,7 @@ function bind(){
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
   });
   document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
-  document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));save();await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
+  document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));save();await V3Photos.markDirty(b.id,model);await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
   document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
   document.querySelectorAll('.swipe-content').forEach(x=>{let startX=null,dx=0;x.onpointerdown=e=>{if(e.target.closest('button'))return;startX=e.clientX;dx=0;x.style.transition='none';x.setPointerCapture?.(e.pointerId);};x.onpointermove=e=>{if(startX===null)return;dx=Math.max(-132,Math.min(0,e.clientX-startX));if(Math.abs(dx)>6)x.style.transform=`translateX(${dx}px)`;};x.onpointerup=e=>{if(startX===null)return;x.style.transition='transform .2s ease';x.style.transform=dx<-45?'translateX(-132px)':'translateX(0)';x.closest('.swipe-wrap')?.classList.toggle('open',dx<-45);startX=null;x.releasePointerCapture?.(e.pointerId);};});
   const search=document.querySelector('#detailSearch');if(search){search.oninput=applyDetailFilter;applyDetailFilter();}
@@ -343,7 +355,7 @@ async function action(name){
   if(name==='cancel-edit'){const returnToDetails=draft.editContext==='model';releaseDraftPhoto();draft=freshDraft();screen=returnToDetails?'details':'entry';render();}
   if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;await completeCurrentModel();}
   if(name==='photos'){await loadPhotoGallery();}
-  if(name==='select-all-photos'){const ready=modal.items.filter(item=>item.record?.renderedBlob).map(item=>item.model);modal.selected=modal.selected.size===ready.length?new Set():new Set(ready);render();}
+  if(name==='select-all-photos'){const filter=modal.filter||'pending',ready=modal.items.filter(item=>item.record?.renderedBlob&&(filter==='sent'?item.record?.sentAt:!item.record?.sentAt)).map(item=>item.model);modal.selected=ready.length&&ready.every(model=>modal.selected.has(model))?new Set():new Set(ready);render();}
   if(name==='refresh-photos'){revokeGalleryUrls();await loadPhotoGallery(true);toast('商品图片已重新生成');}
   if(name==='share-photos')await shareSelectedPhotos();
   if(name==='save-photos')saveSelectedPhotos();
@@ -476,7 +488,7 @@ async function loadPhotoGallery(force=false){
     if(record?.sourceBlob&&(force||record.dirty||!record.renderedBlob||record.renderVersion!==PHOTO_RENDER_VERSION)){try{await regenerateModelPhoto(batch,model);record=await V3Photos.get(batch.id,model);}catch(error){}}
     items.push({model,record,url:record?.renderedBlob?URL.createObjectURL(record.renderedBlob):''});
   }
-  modal={type:'photo-gallery',items,selected:new Set()};
+  modal={type:'photo-gallery',items,selected:new Set(),filter:'pending'};
   render();
 }
 async function shareSelectedPhotos(){
@@ -484,7 +496,13 @@ async function shareSelectedPhotos(){
   if(!selected.length)return toast('请先选择要分享的图片');
   const files=selected.map(item=>new File([item.record.renderedBlob],item.record.filename,{type:'image/jpeg'}));
   try{
-    if(navigator.share&&navigator.canShare?.({files})){await navigator.share({files,title:`${getBatch().supplier} 采购图片`});toast('已打开系统分享面板');return;}
+    if(navigator.share&&navigator.canShare?.({files})){
+      await navigator.share({files,title:`${getBatch().supplier} 采购图片`});
+      const sentAt=Date.now(),batch=getBatch();
+      await Promise.all(selected.map(item=>V3Photos.markSent(batch.id,item.model,sentAt)));
+      selected.forEach(item=>item.record={...item.record,sentAt});
+      modal.selected=new Set();modal.filter='sent';render();toast(`${selected.length} 张图片已归入已发送`);return;
+    }
   }catch(error){if(error?.name==='AbortError')return;}
   files.forEach((file,index)=>setTimeout(()=>download(file,file.name),index*250));
   toast('当前设备不支持多图分享，已改为保存图片');
@@ -539,6 +557,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=12',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=13',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
