@@ -404,8 +404,14 @@ async function action(name){
     save();
     const count=colors.length*draft.stores.length;
     const photoUpdate=editing?saveAndRenderModelPhoto(b,model,photoBlob,oldModel):null;
-    draft.editIds=[];draft.editContext='';draft.originalModel=model;draft.stores=[];
-    screen=editing&&editContext==='model'?'details':'entry';
+    if(editing&&editContext==='model'){
+      releaseDraftPhoto();
+      draft=freshDraft();
+      screen='details';
+    }else{
+      draft.editIds=[];draft.editContext='';draft.originalModel=model;draft.stores=[];
+      screen='entry';
+    }
     render();
     toast(editing?(editContext==='preview'?'已保存该门店修改':'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);
     if(photoUpdate){
@@ -888,6 +894,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=20',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=21',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
