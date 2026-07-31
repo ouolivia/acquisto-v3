@@ -1,5 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
-const PHOTO_RENDER_VERSION = 3;
+const PHOTO_RENDER_VERSION = 4;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -122,7 +122,8 @@ function homeView(){
   const batches=[...state.batches].sort((a,b)=>b.createdAt-a.createdAt);
   return `${header('采购录入','待录入')}<div class="wrap">
     <section class="card"><h2>新建一批采购</h2><div class="stack">
-      <div><label class="label">供应商名称</label><input id="supplier" class="field" placeholder="例如：Milano Trading" autocomplete="off"></div>
+      <div class="supplier-fields"><div><label class="label">供应商名称</label><input id="supplier" class="field" placeholder="例如：Milano Trading" autocomplete="off"></div>
+      <div><label class="label">供应商缩写 <small class="optional">选填</small></label><input id="supplierAbbr" class="field" placeholder="例如：XY" autocomplete="off"></div></div>
       <div><label class="label">采购日期</label><input id="date" class="field" type="date" value="${today()}"></div>
       <button class="btn btn-primary btn-wide" data-action="start">开始录入采购</button>
     </div></section>
@@ -234,7 +235,8 @@ function modalView(){
     const rows=storeSummary(b).sort((a,z)=>{if(sortKey==='amount'&&a.hasPendingCost!==z.hasPendingCost)return a.hasPendingCost?1:-1;if(sortKey==='margin'&&a.hasMargin!==z.hasMargin)return a.hasMargin?-1:1;const av=a[sortKey],zv=z[sortKey];return (av-zv||a.store-z.store)*factor;});
     const marginCost=rows.reduce((sum,row)=>sum+row.marginCost,0),marginSales=rows.reduce((sum,row)=>sum+row.marginSales,0),totalMargin=marginSales>0?(marginSales-marginCost)/marginSales*100:null;
     const sortHead=(key,label)=>`<th aria-sort="${sortKey===key?(sortDir==='asc'?'ascending':'descending'):'none'}"><button type="button" data-summary-sort="${key}">${label}<i>${sortKey===key?(sortDir==='asc'?'↑':'↓'):'↕'}</i></button></th>`;
-    return `<div class="modal-backdrop centered-modal summary-backdrop"><section class="modal store-summary-modal" role="dialog" aria-modal="true" aria-label="供应商采购汇总"><div class="summary-modal-head"><div><h2>供应商采购汇总</h2><p>${esc(b.date)}</p></div><button data-action="close-modal" aria-label="关闭汇总">×</button></div><div class="summary-table-wrap"><table class="store-summary-table"><thead><tr>${sortHead('store','门店')}${sortHead('models','总款式')}${sortHead('pieces','总件数')}${sortHead('amount','总额')}${sortHead('margin','毛利率')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><b>${row.store}</b>店</td><td>${row.models}</td><td>${compactNumber(row.pieces)}</td><td>${row.hasPendingCost?'待定':`€${euro(row.amount)}`}</td><td>${row.hasMargin?`${row.margin.toFixed(2)}%`:'—'}</td></tr>`).join(''):`<tr><td colspan="5" class="summary-empty">暂无采购数据</td></tr>`}</tbody>${rows.length?`<tfoot><tr><th>合计</th><th>${stats.models}</th><th>${compactNumber(stats.pieces)}</th><th>${stats.hasPendingCost?'待定':`€${euro(stats.amount)}`}</th><th>${totalMargin===null?'—':`${totalMargin.toFixed(2)}%`}</th></tr></tfoot>`:''}</table></div><button class="btn btn-primary summary-close-btn" data-action="close-modal">完成</button></section></div>`;
+    const summaryTitle=`${b.supplier}采购汇总`;
+    return `<div class="modal-backdrop centered-modal summary-backdrop"><section class="modal store-summary-modal" role="dialog" aria-modal="true" aria-label="${esc(summaryTitle)}"><div class="summary-modal-head"><div><h2>${esc(summaryTitle)}</h2><p>${esc(b.date)}</p></div><button data-action="close-modal" aria-label="关闭汇总">×</button></div><div class="summary-table-wrap"><table class="store-summary-table"><thead><tr>${sortHead('store','门店')}${sortHead('models','总款式')}${sortHead('pieces','总件数')}${sortHead('amount','总额')}${sortHead('margin','毛利率')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><b>${row.store}</b>店</td><td>${row.models}</td><td>${compactNumber(row.pieces)}</td><td>${row.hasPendingCost?'待定':`€${euro(row.amount)}`}</td><td>${row.hasMargin?`${row.margin.toFixed(2)}%`:'—'}</td></tr>`).join(''):`<tr><td colspan="5" class="summary-empty">暂无采购数据</td></tr>`}</tbody>${rows.length?`<tfoot><tr><th>合计</th><th>${stats.models}</th><th>${compactNumber(stats.pieces)}</th><th>${stats.hasPendingCost?'待定':`€${euro(stats.amount)}`}</th><th>${totalMargin===null?'—':`${totalMargin.toFixed(2)}%`}</th></tr></tfoot>`:''}</table></div><button class="btn btn-primary summary-close-btn" data-action="close-modal">完成</button></section></div>`;
   }
   if(modal.type==='pdf-preview') return `<div class="modal-backdrop pdf-preview-backdrop"><section class="pdf-preview-modal" role="dialog" aria-modal="true" aria-label="PDF 预览"><header class="pdf-preview-head"><div><h2>PDF 预览</h2><p>A4 供应商分货单 · ${modal.output.pages.length} 页</p></div><button data-action="close-modal" aria-label="关闭 PDF 预览">×</button></header><div class="pdf-preview-pages">${modal.output.pages.map((src,i)=>`<figure><img src="${src}" alt="PDF 第 ${i+1} 页预览"><figcaption>第 ${i+1} 页</figcaption></figure>`).join('')}</div><footer class="pdf-preview-actions"><button class="btn btn-light" data-action="close-modal">返回修改</button><button class="btn btn-primary" data-action="export-pdf-file">确认导出 PDF</button></footer></section></div>`;
   return '';
@@ -373,7 +375,7 @@ async function completeCurrentModel(){
 }
 
 async function action(name){
-  if(name==='start'){const supplier=document.querySelector('#supplier').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;colorManageMode=false;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
+  if(name==='start'){const supplier=document.querySelector('#supplier').value.trim(),supplierAbbr=document.querySelector('#supplierAbbr').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,supplierAbbr,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;colorManageMode=false;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
   if(name==='back-home'||name==='home-from-details'){persistDraftNote();colorManageMode=false;releaseDraftPhoto();screen='home';activeBatchId=null;render();}
   if(name==='details'){const lines=persistDraftNote();if(draft.model&&lines.length){try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}catch(error){}}colorManageMode=false;screen='details';render();}
   if(name==='continue'){screen='entry';render();}
@@ -529,8 +531,11 @@ async function createProductImage(batch,model,sourceBlob){
   c.textBaseline='middle';c.fillStyle='#171717';
   const modelSize=fitCanvasText(c,model,300,50,30,'700');c.font=`700 ${modelSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='left';c.fillText(model,28,headerY+headerH/2);
   const priceSize=fitCanvasText(c,costSale,380,48,28,'700');c.font=`700 ${priceSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='center';c.fillText(costSale,560,headerY+headerH/2);
-  c.fillStyle='#aaa';
-  const supplierSize=fitCanvasText(c,batch.supplier,240,30,20,'500');c.font=`500 ${supplierSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='right';c.fillText(batch.supplier,W-28,headerY+headerH/2);
+  const supplierAbbr=String(batch.supplierAbbr||'').trim();
+  if(supplierAbbr){
+    c.fillStyle='#aaa';
+    const supplierSize=fitCanvasText(c,supplierAbbr,240,30,20,'500');c.font=`500 ${supplierSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.textAlign='right';c.fillText(supplierAbbr,W-28,headerY+headerH/2);
+  }
   let y=photoH+headerH;separator(y);
   c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   for(const row of prepared){
@@ -883,6 +888,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=19',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=20',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
