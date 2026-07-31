@@ -59,11 +59,15 @@ function batchStats(b){ const pieces=b.lines.reduce((s,l)=>s+totalPieces(l),0); 
 function storeSummary(b){
   const stores=new Map();
   for(const line of b.lines){
-    if(!stores.has(line.store))stores.set(line.store,{store:line.store,models:new Set(),pieces:0,amount:0,hasPendingCost:false});
+    if(!stores.has(line.store))stores.set(line.store,{store:line.store,models:new Set(),pieces:0,amount:0,hasPendingCost:false,marginCost:0,marginSales:0});
     const row=stores.get(line.store);row.models.add(line.model);row.pieces+=totalPieces(line);
     if(pricePending(line.cost))row.hasPendingCost=true;else row.amount+=Number(line.cost)*totalPieces(line);
+    const cost=Number(line.cost),sale=Number(line.sale),pieces=totalPieces(line);
+    if(!pricePending(line.cost)&&!pricePending(line.sale)&&Number.isFinite(cost)&&Number.isFinite(sale)&&sale>0){
+      row.marginCost+=cost*pieces;row.marginSales+=sale*pieces;
+    }
   }
-  return [...stores.values()].sort((a,z)=>a.store-z.store).map(row=>({...row,models:row.models.size}));
+  return [...stores.values()].sort((a,z)=>a.store-z.store).map(row=>({...row,models:row.models.size,hasMargin:row.marginSales>0,margin:row.marginSales>0?(row.marginSales-row.marginCost)/row.marginSales*100:null}));
 }
 function detailGroups(b,order='sorted'){
   const groups=new Map();
@@ -227,9 +231,10 @@ function modalView(){
   if(modal.type==='sort-colors') return `<div class="modal-backdrop centered-modal color-sort-backdrop"><div class="modal color-sort-manager"><div class="color-manager-head"><span class="color-manager-icon">${icon('sort')}</span><div><h2>调整颜色顺序</h2><p class="modal-hint">${modal.selected?'再点一个目标位置，颜色会移动到那里。':'先点要移动的颜色，再点目标位置，可跨行上下、左右调整。'}</p></div></div><div class="color-sort-grid">${modal.order.map((c,i)=>`<button type="button" class="color-sort-item ${modal.selected===c?'selected':''}" data-sort-color="${esc(c)}"><span>${i+1}</span><b>${esc(c)}</b><i>${modal.selected===c?'已选中':'点击选择'}</i></button>`).join('')}</div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-color-order">保存顺序</button></div></div></div>`;
   if(modal.type==='summary'){
     const b=getBatch(),stats=batchStats(b),sortKey=modal.sortKey||'store',sortDir=modal.sortDir||'asc',factor=sortDir==='asc'?1:-1;
-    const rows=storeSummary(b).sort((a,z)=>{if(sortKey==='amount'&&a.hasPendingCost!==z.hasPendingCost)return a.hasPendingCost?1:-1;const av=a[sortKey],zv=z[sortKey];return (av-zv||a.store-z.store)*factor;});
+    const rows=storeSummary(b).sort((a,z)=>{if(sortKey==='amount'&&a.hasPendingCost!==z.hasPendingCost)return a.hasPendingCost?1:-1;if(sortKey==='margin'&&a.hasMargin!==z.hasMargin)return a.hasMargin?-1:1;const av=a[sortKey],zv=z[sortKey];return (av-zv||a.store-z.store)*factor;});
+    const marginCost=rows.reduce((sum,row)=>sum+row.marginCost,0),marginSales=rows.reduce((sum,row)=>sum+row.marginSales,0),totalMargin=marginSales>0?(marginSales-marginCost)/marginSales*100:null;
     const sortHead=(key,label)=>`<th aria-sort="${sortKey===key?(sortDir==='asc'?'ascending':'descending'):'none'}"><button type="button" data-summary-sort="${key}">${label}<i>${sortKey===key?(sortDir==='asc'?'↑':'↓'):'↕'}</i></button></th>`;
-    return `<div class="modal-backdrop centered-modal summary-backdrop"><section class="modal store-summary-modal" role="dialog" aria-modal="true" aria-label="门店采购汇总"><div class="summary-modal-head"><div><h2>门店采购汇总</h2><p>${esc(b.supplier)} · ${esc(b.date)}</p></div><button data-action="close-modal" aria-label="关闭汇总">×</button></div><div class="summary-table-wrap"><table class="store-summary-table"><thead><tr>${sortHead('store','门店')}${sortHead('models','总款式')}${sortHead('pieces','总件数')}${sortHead('amount','总额')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><b>${row.store}</b>店</td><td>${row.models}</td><td>${compactNumber(row.pieces)}</td><td>${row.hasPendingCost?'待定':`€${euro(row.amount)}`}</td></tr>`).join(''):`<tr><td colspan="4" class="summary-empty">暂无采购数据</td></tr>`}</tbody>${rows.length?`<tfoot><tr><th>合计</th><th>${stats.models}</th><th>${compactNumber(stats.pieces)}</th><th>${stats.hasPendingCost?'待定':`€${euro(stats.amount)}`}</th></tr></tfoot>`:''}</table></div><p class="summary-note">点击表头可切换排序；同一型号的全部颜色，在每家门店只计算为 1 个款式。</p><button class="btn btn-primary summary-close-btn" data-action="close-modal">完成</button></section></div>`;
+    return `<div class="modal-backdrop centered-modal summary-backdrop"><section class="modal store-summary-modal" role="dialog" aria-modal="true" aria-label="供应商采购汇总"><div class="summary-modal-head"><div><h2>供应商采购汇总</h2><p>${esc(b.date)}</p></div><button data-action="close-modal" aria-label="关闭汇总">×</button></div><div class="summary-table-wrap"><table class="store-summary-table"><thead><tr>${sortHead('store','门店')}${sortHead('models','总款式')}${sortHead('pieces','总件数')}${sortHead('amount','总额')}${sortHead('margin','毛利率')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><b>${row.store}</b>店</td><td>${row.models}</td><td>${compactNumber(row.pieces)}</td><td>${row.hasPendingCost?'待定':`€${euro(row.amount)}`}</td><td>${row.hasMargin?`${row.margin.toFixed(2)}%`:'—'}</td></tr>`).join(''):`<tr><td colspan="5" class="summary-empty">暂无采购数据</td></tr>`}</tbody>${rows.length?`<tfoot><tr><th>合计</th><th>${stats.models}</th><th>${compactNumber(stats.pieces)}</th><th>${stats.hasPendingCost?'待定':`€${euro(stats.amount)}`}</th><th>${totalMargin===null?'—':`${totalMargin.toFixed(2)}%`}</th></tr></tfoot>`:''}</table></div><button class="btn btn-primary summary-close-btn" data-action="close-modal">完成</button></section></div>`;
   }
   if(modal.type==='pdf-preview') return `<div class="modal-backdrop pdf-preview-backdrop"><section class="pdf-preview-modal" role="dialog" aria-modal="true" aria-label="PDF 预览"><header class="pdf-preview-head"><div><h2>PDF 预览</h2><p>A4 供应商分货单 · ${modal.output.pages.length} 页</p></div><button data-action="close-modal" aria-label="关闭 PDF 预览">×</button></header><div class="pdf-preview-pages">${modal.output.pages.map((src,i)=>`<figure><img src="${src}" alt="PDF 第 ${i+1} 页预览"><figcaption>第 ${i+1} 页</figcaption></figure>`).join('')}</div><footer class="pdf-preview-actions"><button class="btn btn-light" data-action="close-modal">返回修改</button><button class="btn btn-primary" data-action="export-pdf-file">确认导出 PDF</button></footer></section></div>`;
   return '';
@@ -878,6 +883,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=16',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=19',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
