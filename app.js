@@ -149,7 +149,7 @@ function homeView(){
 
 function entryView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
-  const allocationTitle=draft.editIds.length?(draft.editContext==='preview'&&draft.stores.length===1?`正在修改${draft.stores[0]}店数据`:'正在修改全部门店数据'):'数量与门店';
+  const allocationTitle=draft.editIds.length?(draft.editContext==='preview'?(draft.stores.length?`正在修改${[...draft.stores].sort((a,z)=>a-z).join(', ')}店的数据`:'正在修改所选门店数据'):'正在修改全部门店数据'):'数量与门店';
   const numberColors=state.colors.filter(isNumericColor),textColors=state.colors.filter(c=>!isNumericColor(c));
   const visibleColors=colorCategory==='number'?numberColors:textColors;
   const allocatedStores=new Set(b.lines.filter(l=>l.model===draft.model&&(!draft.colors.length||draft.colors.includes(l.color))).map(l=>l.store));
@@ -438,9 +438,16 @@ async function action(name){
     draft.sale=normalizeSale(draft.sale);
     const quantity=parseQuantity(draft.qty,draft.unit);
     if(isPackageUnit(draft.unit)&&quantity===.5)draft.qty='半';
-    const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob,model=draft.model;
+    const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob,model=draft.model,editedStoreLabel=[...draft.stores].sort((a,z)=>a-z).join(', ');
     b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
-    if(editing){const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));}
+    if(editing){
+      if(editContext==='preview'){
+        const editedStores=new Set(draft.stores);
+        b.lines=b.lines.filter(line=>line.model!==model||!editedStores.has(line.store));
+      }else{
+        const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));
+      }
+    }
     for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:isPackageUnit(draft.unit)?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
     markTransferDirty(b);
     save();
@@ -455,7 +462,7 @@ async function action(name){
       screen='entry';
     }
     render();
-    toast(editing?(editContext==='preview'?'已保存该门店修改':'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);
+    toast(editing?(editContext==='preview'?`已保存${editedStoreLabel}店修改`:'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);
     if(photoUpdate){
       try{await photoUpdate;toast(editContext==='preview'?'该门店与商品图片已更新':'型号资料与商品图片已更新');}
       catch(error){await V3Photos.markDirty(b.id,model);toast('资料已保存，商品图片将在下次打开时更新');}
@@ -951,6 +958,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=30',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=31',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
