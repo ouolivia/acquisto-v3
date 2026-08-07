@@ -13,12 +13,15 @@ let colorCategory = 'number';
 let colorManageMode = false;
 let suppressColorClickUntil = 0;
 let suppressBatchOpenUntil = 0;
+let lastPackageTap = 0;
 let transferPreviewCache = null;
 let transferPackageCache = null;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',photoBlob:null,photoUrl:''}; }
+function isPackageUnit(unit){ return unit==='pack'||unit==='hand'; }
+function packageUnitLabel(unit){ return unit==='hand'?'手':'包'; }
 function loadState(){ try{ const x=JSON.parse(localStorage.getItem(STORE_KEY)); if(x&&Array.isArray(x.batches)) return {...x,colors:Array.isArray(x.colors)?x.colors:DEFAULT_COLORS}; }catch(e){} return {batches:[],colors:[...DEFAULT_COLORS]}; }
 function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
 function esc(v){ return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -47,13 +50,13 @@ function grossMarginDisplay(cost,sale){
 }
 function getBatch(){ return state.batches.find(b=>b.id===activeBatchId); }
 function toast(msg){ const el=document.querySelector('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),1800); }
-function parseQuantity(value,unit){ const s=String(value??'').trim(); if(unit==='pack'&&s==='半')return .5; return Number(s.replace(',','.')); }
+function parseQuantity(value,unit){ const s=String(value??'').trim(); if(isPackageUnit(unit)&&s==='半')return .5; return Number(s.replace(',','.')); }
 function compactNumber(value){ const n=Number(value); return Number.isInteger(n)?String(n):String(Number(n.toFixed(2))); }
-function totalPieces(line){ return line.unit==='pack'?Number(line.qty)*Number(line.packSize):Number(line.qty); }
-function draftQuantity(line){ return line.unit==='pack'&&Number(line.qty)===.5?'半':String(line.qty); }
-function quantityDisplay(line){ const pieces=compactNumber(totalPieces(line)); return line.unit==='pack'&&Number(line.qty)===.5?`半包（${pieces}件）`:`${pieces}件`; }
-function exportQuantity(line){ return line.unit==='pack'?(Number(line.qty)===.5?'半包':`${compactNumber(line.qty)}包`):compactNumber(line.qty); }
-function pdfQuantity(line){ return line.unit==='pack'?exportQuantity(line):`${compactNumber(line.qty)}件`; }
+function totalPieces(line){ return isPackageUnit(line.unit)?Number(line.qty)*Number(line.packSize):Number(line.qty); }
+function draftQuantity(line){ return isPackageUnit(line.unit)&&Number(line.qty)===.5?'半':String(line.qty); }
+function quantityDisplay(line){ const pieces=compactNumber(totalPieces(line)); return isPackageUnit(line.unit)&&Number(line.qty)===.5?`半${packageUnitLabel(line.unit)}（${pieces}件）`:`${pieces}件`; }
+function exportQuantity(line){ return isPackageUnit(line.unit)?(Number(line.qty)===.5?`半${packageUnitLabel(line.unit)}`:`${compactNumber(line.qty)}${packageUnitLabel(line.unit)}`):compactNumber(line.qty); }
+function pdfQuantity(line){ return isPackageUnit(line.unit)?exportQuantity(line):`${compactNumber(line.qty)}件`; }
 function isNumericColor(color){ return /^-?\d+(?:[.,]\d+)?$/.test(String(color||'').trim()); }
 function batchStats(b){ const pieces=b.lines.reduce((s,l)=>s+totalPieces(l),0); const models=new Set(b.lines.map(l=>l.model)).size; const amount=b.lines.reduce((s,l)=>s+(pricePending(l.cost)?0:Number(l.cost)*totalPieces(l)),0); const hasPendingCost=b.lines.some(l=>pricePending(l.cost)); return {pieces,models,amount,hasPendingCost}; }
 function storeSummary(b){
@@ -147,13 +150,13 @@ function entryView(){
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field cost-price-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
         <div class="inside-field sale-price-field"><span>卖价</span><button type="button" class="sale-price-step" data-sale-step="-1" aria-label="卖价减 1">−</button><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"><button type="button" class="sale-price-step" data-sale-step="1" aria-label="卖价加 1">＋</button></div></div>
-        <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${draft.unit==='pack'?'active':''}" data-unit="pack">包</button></div>
-        ${draft.unit==='pack'?`<div class="inside-field pack-size-field"><span>每包件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
+        <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${isPackageUnit(draft.unit)?'active':''}" data-unit="pack" title="选中后双击可切换包/手">${packageUnitLabel(draft.unit)}</button></div>
+        ${isPackageUnit(draft.unit)?`<div class="inside-field pack-size-field"><span>每${packageUnitLabel(draft.unit)}件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
       </div>
     </section>
     <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
     <section class="card"><div class="section-head"><h2>数量与门店</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
-      <div class="qty-allocate-row"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${draft.unit==='pack'?'text':'number'}" ${draft.unit==='pack'?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='pack'?'包':'件'}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div><button class="btn btn-primary" data-action="allocate">${draft.editIds.length?'保存修改':'分配到所选门店'}</button></div>
+      <div class="qty-allocate-row"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${isPackageUnit(draft.unit)?'text':'number'}" ${isPackageUnit(draft.unit)?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='piece'?'件':packageUnitLabel(draft.unit)}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div><button class="btn btn-primary" data-action="allocate">${draft.editIds.length?'保存修改':'分配到所选门店'}</button></div>
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
     </section>
     <div class="note-submit-row"><section class="card model-note-card"><div class="section-head"><h2>型号备注 <small class="optional">选填</small></h2></div><textarea id="note" class="model-note-input" rows="2" placeholder="例如：包装要求、尺码或其他说明">${esc(draft.note)}</textarea></section>
@@ -258,11 +261,26 @@ function stepSale(value,step,cost){
   const base=Number.isFinite(current)?current:(Number.isFinite(fallback)?fallback:.99);
   return Math.max(.99,base+step).toFixed(2);
 }
-function validDraft(){ syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(draft.unit==='pack'&&Number(draft.packSize)<1)return '请输入每包件数'; const qty=parseQuantity(draft.qty,draft.unit); if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量'; if(!draft.stores.length)return '请选择至少一家门店'; return ''; }
+function validDraft(){ syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(isPackageUnit(draft.unit)&&Number(draft.packSize)<1)return `请输入每${packageUnitLabel(draft.unit)}件数`; const qty=parseQuantity(draft.qty,draft.unit); if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量'; if(!draft.stores.length)return '请选择至少一家门店'; return ''; }
 function applyDetailFilter(){const input=document.querySelector('#detailSearch');if(!input)return;detailSearchTerm=input.value;document.querySelectorAll('[data-search-model]').forEach(el=>el.hidden=!fuzzyMatch(el.dataset.searchModel,detailSearchTerm));}
 
 function bind(){
-  document.querySelectorAll('[data-unit]').forEach(x=>x.onclick=()=>{syncDraft();draft.unit=x.dataset.unit;const q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<1)draft.qty='1';else if(draft.unit==='piece')draft.qty=String(Math.max(1,Math.round(q)));render();});
+  document.querySelectorAll('[data-unit]').forEach(x=>x.onclick=()=>{
+    syncDraft();
+    if(x.dataset.unit==='piece'){
+      draft.unit='piece';lastPackageTap=0;
+      const q=parseQuantity(draft.qty,draft.unit);draft.qty=String(!Number.isFinite(q)||q<1?1:Math.max(1,Math.round(q)));
+      render();return;
+    }
+    if(!isPackageUnit(draft.unit)){
+      draft.unit='pack';lastPackageTap=0;
+      const q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<1)draft.qty='1';
+      render();return;
+    }
+    const now=Date.now();
+    if(now-lastPackageTap<=450){draft.unit=draft.unit==='hand'?'pack':'hand';lastPackageTap=0;render();toast(`单位已切换为${packageUnitLabel(draft.unit)}`);}
+    else lastPackageTap=now;
+  });
   document.querySelectorAll('[data-color-category]').forEach(x=>x.onclick=()=>{syncDraft();colorCategory=x.dataset.colorCategory;render();});
   document.querySelectorAll('[data-color]').forEach(x=>{
     x.onclick=()=>{if(Date.now()<suppressColorClickUntil)return;syncDraft();const c=x.dataset.color;draft.colors=draft.colors.includes(c)?draft.colors.filter(v=>v!==c):[...draft.colors,c];render();};
@@ -309,7 +327,7 @@ function bind(){
   document.querySelectorAll('[data-sort-color]').forEach(x=>{
     x.onclick=()=>{const target=x.dataset.sortColor;if(!modal.selected){modal.selected=target;render();return;}if(modal.selected===target){modal.selected=null;render();return;}const from=modal.order.indexOf(modal.selected),to=modal.order.indexOf(target);if(from>=0&&to>=0){const [moving]=modal.order.splice(from,1);modal.order.splice(to,0,moving);}modal.selected=null;render();};
   });
-  document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(draft.unit==='pack'){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
+  document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(isPackageUnit(draft.unit)){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
   document.querySelectorAll('[data-sale-step]').forEach(x=>x.onclick=()=>{const sale=document.querySelector('#sale'),cost=document.querySelector('#cost');if(!sale)return;sale.value=stepSale(sale.value,Number(x.dataset.saleStep),cost?.value);draft.sale=sale.value;const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale.value);});
   document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];render();});
   document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{if(Date.now()<suppressBatchOpenUntil)return;activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
@@ -337,12 +355,12 @@ function bind(){
     let photoRecord=null;
     try{photoRecord=await V3Photos.get(batch.id,first.model);}catch(error){}
     releaseDraftPhoto();
-    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[...new Set(lines.map(l=>l.store).filter(n=>STORES.includes(n)))].sort((a,b)=>a-b),editIds:lines.map(l=>l.id),editContext:'model'};
+    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[...new Set(lines.map(l=>l.store).filter(n=>STORES.includes(n)))].sort((a,b)=>a-b),editIds:lines.map(l=>l.id),editContext:'model'};
     if(photoRecord?.sourceBlob)setDraftPhoto(photoRecord.sourceBlob);
     screen='entry';render();
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
   });
-  document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:first.unit==='pack'?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
+  document.querySelectorAll('[data-edit-preview-store]').forEach(x=>x.onclick=()=>{const store=Number(x.dataset.editPreviewStore),lines=getBatch().lines.filter(l=>l.model===draft.model&&l.store===store),first=lines[0];if(!first)return;const photoBlob=draft.photoBlob,photoUrl=draft.photoUrl,originalModel=draft.originalModel||first.model;draft={...freshDraft(),model:first.model,originalModel,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[store],editIds:lines.map(l=>l.id),editContext:'preview',photoBlob,photoUrl};render();requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'smooth'}));toast(`正在修改 ${store} 店`);});
   document.querySelectorAll('[data-delete-preview-store]').forEach(x=>x.onclick=async()=>{const store=Number(x.dataset.deletePreviewStore),model=draft.model;if(confirm(`确定删除 ${store} 店在型号 ${model} 下的全部分配吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>!(l.model===model&&l.store===store));markTransferDirty(b);save();await V3Photos.markDirty(b.id,model);await regenerateModelPhoto(b,model);render();toast(`已删除 ${store} 店分配`);}});
   document.querySelectorAll('[data-delete-model]').forEach(x=>x.onclick=async()=>{const model=x.dataset.deleteModel;if(confirm(`确定删除型号 ${model} 的全部采购信息和照片吗？`)){const b=getBatch();b.lines=b.lines.filter(l=>l.model!==model);markTransferDirty(b);save();await V3Photos.remove(b.id,model);render();toast(`型号 ${model} 已删除`);}});
   document.querySelectorAll('.swipe-content').forEach(x=>{let startX=null,dx=0;x.onpointerdown=e=>{if(e.target.closest('button'))return;startX=e.clientX;dx=0;x.style.transition='none';x.setPointerCapture?.(e.pointerId);};x.onpointermove=e=>{if(startX===null)return;dx=Math.max(-132,Math.min(0,e.clientX-startX));if(Math.abs(dx)>6)x.style.transform=`translateX(${dx}px)`;};x.onpointerup=e=>{if(startX===null)return;x.style.transition='transform .2s ease';x.style.transform=dx<-45?'translateX(-132px)':'translateX(0)';x.closest('.swipe-wrap')?.classList.toggle('open',dx<-45);startX=null;x.releasePointerCapture?.(e.pointerId);};});
@@ -402,11 +420,11 @@ async function action(name){
     const err=validDraft();if(err)return toast(err);
     draft.sale=normalizeSale(draft.sale);
     const quantity=parseQuantity(draft.qty,draft.unit);
-    if(draft.unit==='pack'&&quantity===.5)draft.qty='半';
+    if(isPackageUnit(draft.unit)&&quantity===.5)draft.qty='半';
     const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob,model=draft.model;
     b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
     if(editing){const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));}
-    for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:draft.unit==='pack'?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
+    for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:isPackageUnit(draft.unit)?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
     markTransferDirty(b);
     save();
     const count=colors.length*draft.stores.length;
@@ -473,7 +491,7 @@ function download(blob,name){const a=document.createElement('a');a.href=URL.crea
 function photoNamePart(value){return String(value??'').trim().replace(/[\\/:*?"<>|]/g,'-')||'未命名';}
 function photoPrice(value){return pricePending(value)?'待定':Number(value).toFixed(2);}
 function photoFilename(model,cost,sale){return `${photoNamePart(model)};${photoPrice(cost)};${photoPrice(sale)}.jpg`;}
-function shareUnit(line){if(line.unit==='pack')return Number(line.qty)===.5?'半包':`${compactNumber(line.qty)}包`;return `${compactNumber(line.qty)}件`;}
+function shareUnit(line){if(isPackageUnit(line.unit))return Number(line.qty)===.5?`半${packageUnitLabel(line.unit)}`:`${compactNumber(line.qty)}${packageUnitLabel(line.unit)}`;return `${compactNumber(line.qty)}件`;}
 function imageAllocationRows(lines){
   const colorGroups=new Map();
   for(const line of lines){
@@ -901,6 +919,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=25',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=26',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
