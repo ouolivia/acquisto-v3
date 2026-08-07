@@ -1,4 +1,4 @@
-.photo-capture-card{display:grid;grid-template-columns:136px minmax(0,1fr);gap:14px;align-items:start}
+.photo-capture-card{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;align-items:start}
 .photo-capture-column{display:grid;gap:8px;min-width:0}
 .photo-capture-preview{position:relative;aspect-ratio:3/4;border:1px solid var(--line);border-radius:16px;background:#f4f4f4;overflow:hidden;display:grid;place-items:center;color:var(--muted)}
 .photo-capture-preview{padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -6,7 +6,7 @@
 .photo-capture-preview img{width:100%;height:100%;object-fit:cover}
 .photo-capture-preview svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.7}
 .gross-margin{display:flex;align-items:center;justify-content:center;min-height:34px;padding:8px 9px;border:1px solid var(--line);border-radius:11px;background:#f7f7f8;line-height:1}
-.gross-margin strong{color:#111;font-size:14px;font-weight:850;white-space:nowrap}
+.gross-margin strong{color:#555;font-size:12px;font-weight:400;white-space:nowrap}
 .batch-swipe-wrap{position:relative;overflow:hidden;margin-bottom:12px;border-radius:11px;background:#c94138}
 .batch-swipe-actions{position:absolute;z-index:0;top:0;right:0;bottom:0;width:88px}
 .batch-swipe-actions button{width:100%;height:100%;background:#c94138;color:#fff;font-size:12px;font-weight:750}
@@ -15,10 +15,14 @@
 .photo-entry-heading{display:flex;align-items:baseline;gap:9px;min-width:0}
 .photo-entry-heading h2{flex:0 0 auto;margin:0;font-size:16px}
 .photo-entry-heading p{min-width:0;margin:0;overflow:hidden;color:var(--muted);font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
-.photo-entry-panel .grid2{grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:7px}
+.photo-entry-panel .grid2{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:7px}
 .photo-entry-panel .inside-field{min-height:42px;padding:0 9px}
 .photo-entry-panel .inside-field span{margin-right:7px}
 .photo-entry-panel .inside-field input{height:39px}
+.cost-price-field{padding-left:7px!important;padding-right:5px!important}
+.cost-price-field>span{margin-right:2px!important}
+.cost-price-field input{appearance:textfield;-webkit-appearance:textfield;-moz-appearance:textfield;font-variant-numeric:tabular-nums}
+.cost-price-field input::-webkit-inner-spin-button,.cost-price-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .sale-price-field{padding-right:4px!important}
 .sale-price-field>span{margin-right:3px!important}
 .sale-price-field input{text-align:center;font-weight:750;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
@@ -79,15 +83,20 @@
 .color-card.color-managing .color-chip-shell .chip.active{background:#111;color:#fff}
 .color-card.color-managing .color-delete-btn{display:grid}
 .color-chip-shell.dragging{z-index:5;cursor:grabbing!important;opacity:.62;transform:scale(1.04);box-shadow:0 9px 22px rgba(0,0,0,.18)}
-.compact-action-card .btn{min-height:52px;font-size:17px!important;font-weight:850!important}
+.note-submit-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(128px,.55fr);gap:10px;align-items:stretch}
+.note-submit-row>.card{height:100%;margin:0}
+.compact-action-card{display:flex;padding:10px}
+.compact-action-card .btn{min-height:100%;font-size:17px!important;font-weight:850!important}
 @media(max-width:560px){
-  .photo-capture-card{grid-template-columns:96px minmax(0,1fr);gap:10px}
+  .photo-capture-card{grid-template-columns:80px minmax(0,1fr);gap:9px}
   .photo-entry-heading{display:block}
   .photo-entry-heading h2{font-size:14px}
   .photo-entry-heading p{margin-top:2px;font-size:9px}
   .photo-entry-panel{gap:6px}
   .photo-entry-panel .inside-field{padding:0 7px}
   .photo-entry-panel .inside-field span{margin-right:5px;font-size:9px}
+  .cost-price-field{padding-left:5px!important;padding-right:3px!important}
+  .cost-price-field>span{margin-right:1px!important}
   .sale-price-field{padding-left:5px!important;padding-right:3px!important}
   .sale-price-field>span{margin-right:1px!important}
   .sale-price-step{width:23px;height:29px;font-size:16px}
@@ -99,7 +108,8 @@
   .photo-gallery-toolbar p{max-width:150px}
 }
 @media(max-width:370px){
-  .photo-capture-card{grid-template-columns:84px minmax(0,1fr);gap:8px}
+  .photo-capture-card{grid-template-columns:72px minmax(0,1fr);gap:7px}
   .photo-entry-heading p{display:none}
   .color-quick-add{width:108px}
+  .note-submit-row{grid-template-columns:minmax(0,1.3fr) minmax(108px,.7fr);gap:7px}
 }
