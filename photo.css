@@ -84,6 +84,7 @@
 .color-card.color-managing .color-delete-btn{display:grid}
 .color-chip-shell.dragging{z-index:5;cursor:grabbing!important;opacity:.62;transform:scale(1.04);box-shadow:0 9px 22px rgba(0,0,0,.18)}
 .note-submit-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(128px,.55fr);gap:10px;align-items:stretch}
+.qty-allocate-row.editing{grid-template-columns:minmax(0,1fr)}
 .note-submit-row>.card{height:100%;margin:0}
 .compact-action-card{display:flex;padding:10px}
 .compact-action-card .btn{min-height:100%;font-size:17px!important;font-weight:850!important}
