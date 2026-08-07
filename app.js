@@ -1,5 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
-const PHOTO_RENDER_VERSION = 4;
+const PHOTO_RENDER_VERSION = 5;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -524,6 +524,18 @@ function wrapCanvasText(context,text,maxWidth){
   if(current)output.push(current);
   return output.length?output:[''];
 }
+function wrapCanvasTokens(context,text,maxWidth){
+  const tokens=String(text||'').trim().split(/\s{2,}/).filter(Boolean),output=[];let current='';
+  for(const token of tokens){
+    const next=current?`${current}  ${token}`:token;
+    if(!current||context.measureText(next).width<=maxWidth){current=next;continue;}
+    output.push(current);current='';
+    if(context.measureText(token).width<=maxWidth){current=token;continue;}
+    const parts=wrapCanvasText(context,token,maxWidth);output.push(...parts.slice(0,-1));current=parts.at(-1)||'';
+  }
+  if(current)output.push(current);
+  return output.length?output:[''];
+}
 function wrapStoreTokens(context,stores,maxWidth){
   const output=[];let current='';
   stores.map(String).forEach((store,index)=>{
@@ -543,8 +555,11 @@ async function createProductImage(batch,model,sourceBlob){
   const measureCanvas=document.createElement('canvas'),measure=measureCanvas.getContext('2d');
   measure.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   const prepared=allocations.map(group=>{
-    const storeLines=wrapStoreTokens(measure,group.stores,650);
-    return {...group,storeLines,height:rowPad*2+storeLines.length*lineH};
+    const storeLines=wrapStoreTokens(measure,group.stores,520);
+    measure.font='600 40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    const colorLines=wrapCanvasTokens(measure,group.color,245);
+    measure.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    return {...group,storeLines,colorLines,height:rowPad*2+Math.max(storeLines.length,colorLines.length)*lineH};
   });
   measure.font='38px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   const noteLines=first.note?wrapCanvasText(measure,`备注：${first.note}`,W-64):[];
@@ -571,14 +586,14 @@ async function createProductImage(batch,model,sourceBlob){
   c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   for(const row of prepared){
     const top=y;c.fillStyle='#222';c.textBaseline='middle';
-    row.storeLines.forEach((storeLine,index)=>{
+    const rowLineCount=Math.max(row.storeLines.length,row.colorLines.length);
+    for(let index=0;index<rowLineCount;index++){
       const lineY=top+rowPad+lineH/2+index*lineH;
       c.textAlign='left';
-      const colorSize=fitCanvasText(c,row.color,125,40,22,'600');
-      c.font=`600 ${colorSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.fillText(index===0?row.color:'',28,lineY);
-      c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(storeLine,170,lineY);
+      c.font='600 40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(row.colorLines[index]||'',28,lineY);
+      c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(row.storeLines[index]||'',300,lineY);
       if(index===0){c.textAlign='right';c.font='700 42px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(`× ${row.quantity}`,W-28,lineY);}
-    });
+    }
     y+=row.height;separator(y);
   }
   if(noteLines.length){
@@ -919,6 +934,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=26',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=27',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
