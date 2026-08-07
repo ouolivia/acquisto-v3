@@ -149,6 +149,7 @@ function homeView(){
 
 function entryView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
+  const allocationTitle=draft.editIds.length?(draft.editContext==='preview'&&draft.stores.length===1?`正在修改${draft.stores[0]}店数据`:'正在修改全部门店数据'):'数量与门店';
   const numberColors=state.colors.filter(isNumericColor),textColors=state.colors.filter(c=>!isNumericColor(c));
   const visibleColors=colorCategory==='number'?numberColors:textColors;
   const allocatedStores=new Set(b.lines.filter(l=>l.model===draft.model&&(!draft.colors.length||draft.colors.includes(l.color))).map(l=>l.store));
@@ -167,7 +168,7 @@ function entryView(){
       </div>
     </section>
     <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
-    <section class="card"><div class="section-head"><h2>数量与门店</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
+    <section class="card"><div class="section-head"><h2>${esc(allocationTitle)}</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
       <div class="qty-allocate-row ${draft.editIds.length?'editing':''}"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${isPackageUnit(draft.unit)?'text':'number'}" ${isPackageUnit(draft.unit)?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='piece'?'件':packageUnitLabel(draft.unit)}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div>${draft.editIds.length?'':`<button class="btn btn-primary" data-action="allocate">分配到所选门店</button>`}</div>
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
     </section>
@@ -950,6 +951,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=29',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=30',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
