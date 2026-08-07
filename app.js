@@ -160,7 +160,7 @@ function entryView(){
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
     </section>
     <div class="note-submit-row"><section class="card model-note-card"><div class="section-head"><h2>型号备注 <small class="optional">选填</small></h2></div><textarea id="note" class="model-note-input" rows="2" placeholder="例如：包装要求、尺码或其他说明">${esc(draft.note)}</textarea></section>
-    <section class="card compact-action-card">${draft.editIds.length?`<button class="btn btn-light btn-wide" data-action="cancel-edit">取消修改</button>`:`<button class="btn btn-secondary btn-wide" data-action="finish-model">确认提交</button>`}</section></div>
+    <section class="card compact-action-card">${draft.editIds.length?`<button class="btn btn-primary btn-wide" data-action="allocate">确认修改保存</button>`:`<button class="btn btn-secondary btn-wide" data-action="finish-model">确认提交</button>`}</section></div>
     ${previewStores.length?`<section class="allocation-preview"><div class="preview-head"><div><h2>已分配预览</h2><div class="preview-model"><b>${esc(draft.model)}</b><span>${priceDisplay(previewLines[0]?.cost)} <em>/</em> ${priceDisplay(previewLines[0]?.sale)}</span></div></div><strong>共 ${compactNumber(previewTotal)} 件</strong></div><div class="preview-list">${previewStores.map(g=>`<div class="preview-row ${draft.editContext==='preview'&&g.ids.some(id=>draft.editIds.includes(id))?'editing':''}"><span class="preview-store">${g.store}店</span><div class="preview-items">${g.lines.map(l=>`<div>${l.color?`<small>${esc(l.color)}</small>`:'<small>无颜色</small>'}<b>× ${quantityDisplay(l)}</b></div>`).join('')}</div><div class="preview-actions"><button data-edit-preview-store="${g.store}" aria-label="修改 ${g.store} 店分配" title="修改">${icon('edit')}</button><button class="delete" data-delete-preview-store="${g.store}" aria-label="删除 ${g.store} 店分配" title="删除">${icon('delete')}</button></div></div>`).join('')}</div></section>`:''}
   </div><nav class="bottom"><div class="bottom-inner"><button class="btn btn-light" data-action="back-home">采购列表</button><button class="btn btn-primary" data-action="details">查看明细（${b.lines.length}）</button></div></nav>`;
 }
@@ -429,7 +429,7 @@ async function action(name){
     save();
     const count=colors.length*draft.stores.length;
     const photoUpdate=editing?saveAndRenderModelPhoto(b,model,photoBlob,oldModel):null;
-    if(editing&&editContext==='model'){
+    if(editing){
       releaseDraftPhoto();
       draft=freshDraft();
       screen='details';
@@ -934,6 +934,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=27',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=28',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
