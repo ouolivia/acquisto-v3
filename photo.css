@@ -15,10 +15,16 @@
 .photo-entry-heading{display:flex;align-items:baseline;gap:9px;min-width:0}
 .photo-entry-heading h2{flex:0 0 auto;margin:0;font-size:16px}
 .photo-entry-heading p{min-width:0;margin:0;overflow:hidden;color:var(--muted);font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
-.photo-entry-panel .grid2{gap:7px}
+.photo-entry-panel .grid2{grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:7px}
 .photo-entry-panel .inside-field{min-height:42px;padding:0 9px}
 .photo-entry-panel .inside-field span{margin-right:7px}
 .photo-entry-panel .inside-field input{height:39px}
+.sale-price-field{padding-right:4px!important}
+.sale-price-field>span{margin-right:3px!important}
+.sale-price-field input{text-align:center;font-weight:750;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.sale-price-field input::-webkit-inner-spin-button,.sale-price-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.sale-price-step{display:grid;place-items:center;flex:0 0 auto;width:25px;height:30px;padding:0;border-radius:7px;background:#ececef;color:#333;font-size:17px;font-weight:700;line-height:1;touch-action:manipulation}
+.sale-price-step:active{transform:scale(.94);background:#dcdce0}
 .photo-entry-panel .choice{min-height:39px;padding:7px}
 .photo-gallery-backdrop{padding:18px;background:rgba(18,18,20,.5);backdrop-filter:blur(12px)}
 .photo-gallery-modal{width:min(96vw,760px);max-height:min(92vh,880px);padding:18px;border:0;border-radius:24px;background:#f6f6f7;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.28)}
@@ -82,6 +88,9 @@
   .photo-entry-panel{gap:6px}
   .photo-entry-panel .inside-field{padding:0 7px}
   .photo-entry-panel .inside-field span{margin-right:5px;font-size:9px}
+  .sale-price-field{padding-left:5px!important;padding-right:3px!important}
+  .sale-price-field>span{margin-right:1px!important}
+  .sale-price-step{width:23px;height:29px;font-size:16px}
   .color-quick-add{width:118px}
   .photo-gallery-backdrop{padding:9px}
   .photo-gallery-modal{width:100%;max-height:94vh;padding:14px;border-radius:20px}

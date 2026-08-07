@@ -146,7 +146,7 @@ function entryView(){
       <div class="photo-entry-panel"><div class="photo-entry-heading"><h2>商品照片 *</h2><p>${draft.photoUrl?'照片已使用；点击可重拍。':'点击照片直接拍摄。'}</p></div><input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
-        <div class="inside-field"><span>卖价</span><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"></div></div>
+        <div class="inside-field sale-price-field"><span>卖价</span><button type="button" class="sale-price-step" data-sale-step="-1" aria-label="卖价减 1">−</button><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"><button type="button" class="sale-price-step" data-sale-step="1" aria-label="卖价加 1">＋</button></div></div>
         <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${draft.unit==='pack'?'active':''}" data-unit="pack">包</button></div>
         ${draft.unit==='pack'?`<div class="inside-field pack-size-field"><span>每包件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
       </div>
@@ -252,6 +252,12 @@ function persistDraftNote(){
   if(changed){markTransferDirty(b);save();V3Photos.markDirty(b.id,draft.model);}return lines;
 }
 function normalizeSale(v){ const s=String(v).trim(); if(!s)return ''; return s.includes('.')?Number(s).toFixed(2):`${parseInt(s,10)}.99`; }
+function suggestedSale(cost){ return globalThis.V3Pricing?.suggest(cost)||''; }
+function stepSale(value,step,cost){
+  const current=Number(value),fallback=Number(suggestedSale(cost));
+  const base=Number.isFinite(current)?current:(Number.isFinite(fallback)?fallback:.99);
+  return Math.max(.99,base+step).toFixed(2);
+}
 function validDraft(){ syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(draft.unit==='pack'&&Number(draft.packSize)<1)return '请输入每包件数'; const qty=parseQuantity(draft.qty,draft.unit); if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量'; if(!draft.stores.length)return '请选择至少一家门店'; return ''; }
 function applyDetailFilter(){const input=document.querySelector('#detailSearch');if(!input)return;detailSearchTerm=input.value;document.querySelectorAll('[data-search-model]').forEach(el=>el.hidden=!fuzzyMatch(el.dataset.searchModel,detailSearchTerm));}
 
@@ -304,6 +310,7 @@ function bind(){
     x.onclick=()=>{const target=x.dataset.sortColor;if(!modal.selected){modal.selected=target;render();return;}if(modal.selected===target){modal.selected=null;render();return;}const from=modal.order.indexOf(modal.selected),to=modal.order.indexOf(target);if(from>=0&&to>=0){const [moving]=modal.order.splice(from,1);modal.order.splice(to,0,moving);}modal.selected=null;render();};
   });
   document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(draft.unit==='pack'){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
+  document.querySelectorAll('[data-sale-step]').forEach(x=>x.onclick=()=>{const sale=document.querySelector('#sale'),cost=document.querySelector('#cost');if(!sale)return;sale.value=stepSale(sale.value,Number(x.dataset.saleStep),cost?.value);draft.sale=sale.value;const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale.value);});
   document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];render();});
   document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{if(Date.now()<suppressBatchOpenUntil)return;activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
   document.querySelectorAll('[data-delete-batch]').forEach(x=>x.onclick=async()=>{
@@ -361,7 +368,7 @@ function bind(){
   if(quickColor)quickColor.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();action('quick-add-color');}};
   const cost=document.querySelector('#cost'),sale=document.querySelector('#sale');
   const updateGrossMargin=()=>{const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale?.value);};
-  if(cost)cost.oninput=updateGrossMargin;
+  if(cost)cost.oninput=()=>{const suggestion=suggestedSale(cost.value);if(sale)sale.value=suggestion;draft.cost=cost.value.trim();draft.sale=suggestion;updateGrossMargin();};
   if(sale)sale.oninput=updateGrossMargin;
   if(cost)cost.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();syncDraft();sale?.focus();}};
   if(sale)sale.onblur=()=>{draft.sale=normalizeSale(sale.value);sale.value=draft.sale;updateGrossMargin();};
@@ -894,6 +901,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=21',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=23',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
