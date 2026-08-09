@@ -22,7 +22,8 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',photoBlob:null,photoUrl:''}; }
 function isPackageUnit(unit){ return unit==='pack'||unit==='hand'; }
 function packageUnitLabel(unit){ return unit==='hand'?'手':'包'; }
-function loadState(){ try{ const x=JSON.parse(localStorage.getItem(STORE_KEY)); if(x&&Array.isArray(x.batches)) return {...x,colors:Array.isArray(x.colors)?x.colors:DEFAULT_COLORS}; }catch(e){} return {batches:[],colors:[...DEFAULT_COLORS]}; }
+function isLegacyAutomaticNote(note){return /^\d+(?:[.,]\d+)?pz\/(?:件|包|手)$/.test(String(note||'').trim());}
+function loadState(){ try{ const x=JSON.parse(localStorage.getItem(STORE_KEY)); if(x&&Array.isArray(x.batches)){let changed=false;x.batches.forEach(batch=>batch.lines?.forEach(line=>{if(isLegacyAutomaticNote(line.note)){line.note='';changed=true;}}));if(changed)localStorage.setItem(STORE_KEY,JSON.stringify(x));return {...x,colors:Array.isArray(x.colors)?x.colors:DEFAULT_COLORS};} }catch(e){} return {batches:[],colors:[...DEFAULT_COLORS]}; }
 function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
 function esc(v){ return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function pricePending(v){ return v===null||v===''||typeof v==='undefined'; }
@@ -943,6 +944,6 @@ if('serviceWorker' in navigator){
     refreshing=true;
     location.reload();
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=32',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=33',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
