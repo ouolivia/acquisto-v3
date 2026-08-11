@@ -1,5 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
-const PHOTO_RENDER_VERSION = 7;
+const PHOTO_RENDER_VERSION = 8;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -648,6 +648,25 @@ async function regenerateModelPhoto(batch,model){
   if(!record?.sourceBlob)return null;
   return saveAndRenderModelPhoto(batch,model,null);
 }
+async function upgradeStoredPhotoDisplays(){
+  let upgraded=0;
+  for(const batch of state.batches){
+    const models=[...new Set((batch.lines||[]).map(line=>line.model).filter(Boolean))];
+    for(const model of models){
+      try{
+        const record=await V3Photos.get(batch.id,model);
+        if(record?.sourceBlob&&(record.dirty||!record.renderedBlob||record.renderVersion!==PHOTO_RENDER_VERSION)){
+          await regenerateModelPhoto(batch,model);
+          upgraded++;
+        }
+      }catch(error){}
+    }
+  }
+  if(upgraded){
+    if(modal?.type==='photo-gallery')await loadPhotoGallery();
+    toast(`已更新 ${upgraded} 张历史商品图片`);
+  }
+}
 function revokeGalleryUrls(){
   if(modal?.type==='photo-gallery')modal.items?.forEach(item=>{if(item.url)URL.revokeObjectURL(item.url);});
 }
@@ -952,3 +971,4 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=33',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 render();
+setTimeout(()=>upgradeStoredPhotoDisplays(),300);
