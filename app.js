@@ -169,7 +169,7 @@ function entryView(){
 
 function detailsView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
-  const modelGroups=modelDetailGroups(b,'input').reverse(),transfer=transferStatus(b);
+  const modelGroups=outputModelGroups(b).reverse(),transfer=transferStatus(b);
   return `${header('采购明细',`${b.supplier} · ${b.date}`)}<div class="wrap">
     <section class="detail-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg><input id="detailSearch" value="${esc(detailSearchTerm)}" placeholder="模糊搜索当前采购型号" autocomplete="off"><button data-action="clear-search" aria-label="清除搜索">×</button></section>
     <section class="card no-print transfer-launch-card"><button class="windows-transfer-button" data-action="windows"><span class="windows-transfer-icon">W</span><span><b>发送到 Windows</b></span><i>›</i></button><div class="windows-transfer-state ${transfer.key}"><span></span>${esc(transfer.label)}</div></section>
