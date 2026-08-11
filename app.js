@@ -1,5 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
-const PHOTO_RENDER_VERSION = 6;
+const PHOTO_RENDER_VERSION = 7;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -199,7 +199,7 @@ function modalView(){
       <header class="transfer-modal-head"><div class="transfer-head-icon">W</div><div><span>采购传输包</span><h2>发送到 Windows</h2><p>${esc(preview.batch.supplier)} · ${esc(preview.batch.date)}</p></div><button data-action="close-modal" aria-label="关闭发送预览">×</button></header>
       ${modal.error?`<div class="transfer-error"><b>发送未完成</b><span>${esc(modal.error)}</span></div>`:''}
       <div class="transfer-summary-grid"><div><small>款式</small><b>${preview.models.length}</b></div><div><small>商品图片</small><b>${preview.readyCount}</b></div><div><small>采购数据</small><b>${preview.lineCount}</b></div><div><small>预计大小</small><b>${esc(V3Drive.formatBytes(preview.estimatedBytes))}</b></div></div>
-      <div class="transfer-package-card"><div class="transfer-package-icon">ZIP</div><div><b>${esc(preview.packageName)}</b><span>Excel、采购JSON、校验清单和全部成品图片</span></div></div>
+      <div class="transfer-package-card"><div class="transfer-package-icon">ZIP</div><div><b>${esc(preview.packageName)}</b><span>Excel 和 ORIGINAL 原始图片文件夹</span></div></div>
       ${preview.missingModels.length?`<div class="transfer-warning"><b>${preview.missingModels.length} 个型号缺少照片</b><p>${preview.missingModels.map(esc).join('、')}</p><span>仍可发送，Excel和其他图片不会受影响。</span></div>`:`<div class="transfer-ready"><span>✓</span><div><b>图片资料完整</b><small>本批全部型号都有成品图片</small></div></div>`}
       <div class="drive-connection-row"><div><span class="drive-dot ${connected?'online':configured?'configured':''}"></span><div><b>${connected?'Google Drive 已连接':configured?'Google Drive 等待登录':'尚未设置 Google Drive'}</b><small>${configured?'目标目录：采易单 / 待录入':'首次使用需要填写Google OAuth客户端ID'}</small></div></div><button data-action="${configured?'connect-drive':'drive-settings'}">${connected?'检查文件夹':configured?'连接':'设置'}</button></div>
       <p class="transfer-privacy">文件只会进入你的私有Google Drive，不会上传到GitHub。不同账号时，可把“采易单”文件夹共享给Windows账号。</p>
@@ -502,21 +502,43 @@ function photoNamePart(value){return String(value??'').trim().replace(/[\\/:*?"<
 function photoPrice(value){return pricePending(value)?'待定':Number(value).toFixed(2);}
 function photoFilename(model,cost,sale){return `${photoNamePart(model)};${photoPrice(cost)};${photoPrice(sale)}.jpg`;}
 function shareUnit(line){if(isPackageUnit(line.unit)){const quantity=Number(line.qty)===.5?'半':compactNumber(line.qty),packSize=compactNumber(line.packSize);return `${quantity}${packageUnitLabel(line.unit)}(${packSize}pz)`;}return `${compactNumber(line.qty)}件`;}
-function imageAllocationRows(lines){
-  const colorGroups=new Map();
-  for(const line of lines){
-    const groupKey=[line.color||'',line.unit,line.qty,line.packSize].join('\u001f');
-    if(!colorGroups.has(groupKey))colorGroups.set(groupKey,{color:line.color||'',unit:line.unit,qty:line.qty,packSize:line.packSize,quantity:shareUnit(line),stores:[]});
-    colorGroups.get(groupKey).stores.push(line.store);
+function allocationColorOrder(colors){
+  const ranks=new Map(state.colors.map((color,index)=>[color,index]));
+  return [...new Set(colors.filter(Boolean))].sort((a,z)=>{
+    const aRank=ranks.has(a)?ranks.get(a):Number.MAX_SAFE_INTEGER;
+    const zRank=ranks.has(z)?ranks.get(z):Number.MAX_SAFE_INTEGER;
+    return aRank-zRank||String(a).localeCompare(String(z),undefined,{numeric:true});
+  });
+}
+function outputAllocationRows(lines){
+  const storeGroups=new Map();
+  for(const line of [...lines].sort((a,z)=>(a.createdAt||0)-(z.createdAt||0)||a.store-z.store)){
+    const signature=[line.unit,line.qty,line.packSize].join('\u001f');
+    const key=[line.store,signature].join('\u001f');
+    if(!storeGroups.has(key))storeGroups.set(key,{store:Number(line.store),unit:line.unit,qty:line.qty,packSize:line.packSize,colors:[],createdAt:line.createdAt||0});
+    if(line.color)storeGroups.get(key).colors.push(line.color);
   }
   const merged=new Map();
-  for(const group of colorGroups.values()){
-    const stores=[...new Set(group.stores)].sort((a,b)=>a-b);
-    const mergeKey=[group.color?'color':'no-color',group.unit,group.qty,group.packSize,stores.join(',')].join('\u001f');
-    if(!merged.has(mergeKey))merged.set(mergeKey,{colors:[],quantity:group.quantity,stores});
-    if(group.color)merged.get(mergeKey).colors.push(group.color);
+  for(const storeGroup of storeGroups.values()){
+    const colors=allocationColorOrder(storeGroup.colors);
+    const key=[storeGroup.unit,storeGroup.qty,storeGroup.packSize,colors.length?colors.join('\u001e'):'\u0000'].join('\u001f');
+    if(!merged.has(key))merged.set(key,{unit:storeGroup.unit,qty:storeGroup.qty,packSize:storeGroup.packSize,colors,stores:[],createdAt:storeGroup.createdAt});
+    const group=merged.get(key);group.stores.push(storeGroup.store);group.createdAt=Math.min(group.createdAt,storeGroup.createdAt);
   }
-  return [...merged.values()].map(group=>({...group,color:group.colors.join('  ')}));
+  return [...merged.values()]
+    .map(group=>({...group,stores:[...new Set(group.stores)].sort((a,z)=>a-z)}))
+    .sort((a,z)=>a.createdAt-z.createdAt||a.stores[0]-z.stores[0]);
+}
+function imageAllocationRows(lines){
+  return outputAllocationRows(lines).map(group=>({...group,color:group.colors.join('  '),quantity:shareUnit(group)}));
+}
+function outputModelGroups(batch){
+  const models=new Map();
+  for(const line of [...batch.lines].sort((a,z)=>(a.createdAt||0)-(z.createdAt||0))){
+    if(!models.has(line.model))models.set(line.model,{model:line.model,cost:line.cost,sale:line.sale,note:line.note||'',lines:[]});
+    const model=models.get(line.model);model.lines.push(line);if(line.note)model.note=line.note;
+  }
+  return [...models.values()].map(model=>({...model,items:outputAllocationRows(model.lines).map(item=>({...item,displayColors:item.colors}))}));
 }
 function canvasBlob(canvas,type='image/jpeg',quality=.92){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('图片生成失败')),type,quality));}
 function fitCanvasText(context,text,maxWidth,startSize,minSize=24,weight='600'){
@@ -750,15 +772,19 @@ async function buildExcelArtifact(batch){
   ].map(entry=>({...entry,data:new Blob([entry.data],{type:'application/xml'}),date:created}));
   const zip=await V3Drive.zip(entries);
   const blob=zip.slice(0,zip.size,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  return {blob,name:safeName(`ACQUISTO ${batch.supplier}_${batch.date}.xlsx`)};
+  return {blob,name:safeName(`AQUISTO ${batch.supplier}_${batch.date}.xlsx`)};
 }
 async function exportExcel(b){
   const output=await buildExcelArtifact(b);
   download(output.blob,output.name);toast('Excel 已导出');
 }
 function transferPackageName(batch){
-  const id=String(batch.id||'batch').slice(-8);
-  return safeName(`采购包_${batch.supplier}_${batch.date}_${id}.zip`);
+  const sameDayBatches=state.batches
+    .filter(item=>item.supplier===batch.supplier&&item.date===batch.date)
+    .sort((a,z)=>(a.createdAt||0)-(z.createdAt||0)||String(a.id).localeCompare(String(z.id)));
+  const duplicateIndex=sameDayBatches.findIndex(item=>item.id===batch.id);
+  const identifier=duplicateIndex>0?`_${duplicateIndex+1}`:'';
+  return safeName(`${batch.supplier}_${batch.date}${identifier}.zip`);
 }
 function purchaseTransferData(batch){
   const stats=batchStats(batch);
@@ -809,7 +835,6 @@ async function collectTransferPhotos(batch){
 }
 async function createTransferPreview(batch){
   const collection=await collectTransferPhotos(batch),excel=await buildExcelArtifact(batch);
-  const jsonBytes=new Blob([JSON.stringify(purchaseTransferData(batch))]).size;
   const imageBytes=collection.photos.reduce((sum,item)=>sum+item.blob.size,0);
   return {
     batch:{id:batch.id,supplier:batch.supplier,date:batch.date},
@@ -817,44 +842,24 @@ async function createTransferPreview(batch){
     readyCount:collection.photos.length,
     missingModels:collection.missingModels,
     lineCount:batch.lines.length,
-    estimatedBytes:imageBytes+excel.blob.size+jsonBytes+4096,
+    estimatedBytes:imageBytes+excel.blob.size+2048,
     packageName:transferPackageName(batch)
   };
 }
 async function buildTransferPackage(batch,onStage=()=>{}){
   onStage('正在整理商品图片');
   const collection=await collectTransferPhotos(batch);
-  onStage('正在生成Excel和采购清单');
-  const excel=await buildExcelArtifact(batch),purchase=purchaseTransferData(batch),createdAt=new Date();
-  const purchaseBlob=new Blob([JSON.stringify(purchase,null,2)],{type:'application/json'});
-  const fileList=[
-    {name:excel.name,type:'excel',size:excel.blob.size},
-    {name:'purchase.json',type:'data',size:purchaseBlob.size},
-    ...collection.photos.map(item=>({name:`images/${item.filename}`,type:'image',model:item.model,size:item.blob.size}))
-  ];
-  const manifest={
-    schemaVersion:1,
-    app:'采易单 V3',
-    packageName:transferPackageName(batch),
-    batchId:batch.id,
-    supplier:batch.supplier,
-    purchaseDate:batch.date,
-    generatedAt:createdAt.toISOString(),
-    models:collection.models.length,
-    images:collection.photos.length,
-    missingModels:collection.missingModels,
-    files:fileList
-  };
-  const manifestBlob=new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'});
+  onStage('正在生成Excel表格');
+  const excel=await buildExcelArtifact(batch),createdAt=new Date();
+  const packageName=transferPackageName(batch);
   const entries=[
     {name:excel.name,data:excel.blob,date:createdAt},
-    {name:'purchase.json',data:purchaseBlob,date:createdAt},
-    {name:'manifest.json',data:manifestBlob,date:createdAt},
-    ...collection.photos.map(item=>({name:`images/${item.filename}`,data:item.blob,date:createdAt}))
+    {name:'ORIGINAL/',data:new Blob([]),date:createdAt},
+    ...collection.photos.map(item=>({name:`ORIGINAL/${item.filename}`,data:item.blob,date:createdAt}))
   ];
   onStage('正在生成ZIP采购包');
   const blob=await V3Drive.zip(entries);
-  return {blob,name:manifest.packageName,manifest};
+  return {blob,name:packageName,manifest:{packageName,images:collection.photos.length,missingModels:collection.missingModels}};
 }
 async function openTransferPreview(error=''){
   const batch=getBatch();
@@ -909,7 +914,7 @@ function buildPdf(b){
   if(!b.lines.length)return toast('没有可导出的明细');
   const W=1240,H=1754,margin=24,tableW=W-margin*2,headerH=43,pageBottom=H-48;
   const widths=[205,135,350,90,115,110,tableW-1005],heads=['商品型号','颜色','门店','门店数','数量','进价','备注'];
-  const models=modelDetailGroups(b,'input').map(m=>({...m,items:m.items.map(g=>({...g,displayColors:g.colors.filter(Boolean)}))}));
+  const models=outputModelGroups(b);
   const pages=[];let canvas,c,y;
   const fontFamily='Songti SC, STSong, SimSun, PingFang SC, serif';
   const line=(x1,y1,x2,y2,dashed=false)=>{c.save();c.strokeStyle='#111';c.lineWidth=2;c.setLineDash(dashed?[6,5]:[]);c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();c.restore();};
