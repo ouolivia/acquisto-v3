@@ -19,7 +19,7 @@ let transferPackageCache = null;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
-function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',photoBlob:null,photoUrl:''}; }
+function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',editAll:false,photoBlob:null,photoUrl:''}; }
 function isPackageUnit(unit){ return unit==='pack'||unit==='hand'; }
 function packageUnitLabel(unit){ return unit==='hand'?'手':'包'; }
 function isLegacyAutomaticNote(note){return /^\d+(?:[.,]\d+)?pz\/(?:件|包|手)$/.test(String(note||'').trim());}
@@ -138,7 +138,7 @@ function homeView(){
 
 function entryView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
-  const allocationTitle=draft.editIds.length?(draft.editContext==='preview'?(draft.stores.length?`正在修改${[...draft.stores].sort((a,z)=>a-z).join(', ')}店的数据`:'正在修改所选门店数据'):'正在修改全部门店数据'):'数量与门店';
+  const allocationTitle=draft.editIds.length?(draft.editAll?'正在统一修改全部门店数据':(draft.stores.length?`正在修改${[...draft.stores].sort((a,z)=>a-z).join(', ')}店的数据`:'请选择需要修改的门店')):'数量与门店';
   const numberColors=state.colors.filter(isNumericColor),textColors=state.colors.filter(c=>!isNumericColor(c));
   const visibleColors=colorCategory==='number'?numberColors:textColors;
   const allocatedStores=new Set(b.lines.filter(l=>l.model===draft.model&&(!draft.colors.length||draft.colors.includes(l.color))).map(l=>l.store));
@@ -152,12 +152,12 @@ function entryView(){
         <div class="inside-field"><span>型号 *</span><input id="model" value="${esc(draft.model)}" placeholder="例如：001" autocomplete="off"></div>
         <div class="grid2"><div class="inside-field cost-price-field"><span>进价</span><input id="cost" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="next" value="${esc(draft.cost)}" placeholder="0.00"></div>
         <div class="inside-field sale-price-field"><span>卖价</span><button type="button" class="sale-price-step" data-sale-step="-1" aria-label="卖价减 1">−</button><input id="sale" type="number" min="0" step="0.01" inputmode="decimal" enterkeyhint="done" value="${esc(draft.sale)}" placeholder="0.00"><button type="button" class="sale-price-step" data-sale-step="1" aria-label="卖价加 1">＋</button></div></div>
-        <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${isPackageUnit(draft.unit)?'active':''}" data-unit="pack" title="选中后双击可切换包/手">${packageUnitLabel(draft.unit)}</button></div>
+        <div class="unit-switch"><button class="choice ${draft.unit==='piece'?'active':''}" data-unit="piece">件</button><button class="choice ${isPackageUnit(draft.unit)?'active':''}" data-unit="pack" title="单击切换包/手">${packageUnitLabel(draft.unit)}</button></div>
         ${isPackageUnit(draft.unit)?`<div class="inside-field pack-size-field"><span>每${packageUnitLabel(draft.unit)}件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
       </div>
     </section>
     <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
-    <section class="card"><div class="section-head"><h2>${esc(allocationTitle)}</h2><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button></div>
+    <section class="card"><div class="section-head"><h2>${esc(allocationTitle)}</h2><div class="allocation-head-actions">${draft.editIds.length?`<button class="link-btn ${draft.editAll?'active':''}" data-action="edit-all-stores">全部统一修改</button><button class="link-btn" data-action="finish-edit">完成修改</button>`:`<button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button>`}</div></div>
       <div class="qty-allocate-row ${draft.editIds.length?'editing':''}"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${isPackageUnit(draft.unit)?'text':'number'}" ${isPackageUnit(draft.unit)?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='piece'?'件':packageUnitLabel(draft.unit)}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div>${draft.editIds.length?'':`<button class="btn btn-primary" data-action="allocate">分配到所选门店</button>`}</div>
       <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
     </section>
@@ -279,9 +279,7 @@ function bind(){
       const q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<1)draft.qty='1';
       render();return;
     }
-    const now=Date.now();
-    if(now-lastPackageTap<=450){draft.unit=draft.unit==='hand'?'pack':'hand';lastPackageTap=0;render();toast(`单位已切换为${packageUnitLabel(draft.unit)}`);}
-    else lastPackageTap=now;
+    draft.unit=draft.unit==='hand'?'pack':'hand';lastPackageTap=0;render();toast(`单位已切换为${packageUnitLabel(draft.unit)}`);
   });
   document.querySelectorAll('[data-color-category]').forEach(x=>x.onclick=()=>{syncDraft();colorCategory=x.dataset.colorCategory;render();});
   document.querySelectorAll('[data-color]').forEach(x=>{
@@ -331,7 +329,7 @@ function bind(){
   });
   document.querySelectorAll('[data-qty-step]').forEach(x=>x.onclick=()=>{syncDraft();const step=Number(x.dataset.qtyStep);let q=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(q)||q<=0)q=1;if(isPackageUnit(draft.unit)){if(step<0)q=q<=1?.5:Math.max(1,Math.round(q)-1);else q=q<1?1:Math.max(1,Math.round(q)+1);draft.qty=q===.5?'半':String(q);}else{draft.qty=String(Math.max(1,Math.round(q)+step));}render();});
   document.querySelectorAll('[data-sale-step]').forEach(x=>x.onclick=()=>{const sale=document.querySelector('#sale'),cost=document.querySelector('#cost');if(!sale)return;sale.value=stepSale(sale.value,Number(x.dataset.saleStep),cost?.value);draft.sale=sale.value;const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale.value);});
-  document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];render();});
+  document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];if(draft.editIds.length)draft.editAll=false;render();});
   document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{if(Date.now()<suppressBatchOpenUntil)return;activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();});
   document.querySelectorAll('[data-delete-batch]').forEach(x=>x.onclick=async()=>{
     const batch=state.batches.find(item=>item.id===x.dataset.deleteBatch);
@@ -357,7 +355,7 @@ function bind(){
     let photoRecord=null;
     try{photoRecord=await V3Photos.get(batch.id,first.model);}catch(error){}
     releaseDraftPhoto();
-    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[...new Set(lines.map(l=>l.store).filter(n=>STORES.includes(n)))].sort((a,b)=>a-b),editIds:lines.map(l=>l.id),editContext:'model'};
+    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[],editIds:lines.map(l=>l.id),editContext:'model',editAll:false};
     if(photoRecord?.sourceBlob)setDraftPhoto(photoRecord.sourceBlob);
     screen='entry';render();
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
@@ -419,6 +417,8 @@ async function action(name){
   if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>{batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);});markTransferDirty(batch);});save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
   if(name==='save-color-order'){if(!modal?.order?.length)return toast('没有可保存的颜色');state.colors=[...modal.order];save();modal=null;render();toast('颜色顺序已保存');}
   if(name==='toggle-stores'){syncDraft();const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
+  if(name==='edit-all-stores'){syncDraft();const modelStores=[...new Set(getBatch().lines.filter(line=>line.model===draft.model&&STORES.includes(line.store)).map(line=>line.store))].sort((a,z)=>a-z);draft.editAll=true;draft.stores=modelStores;render();toast('已选择该型号的全部门店');}
+  if(name==='finish-edit'){const b=getBatch(),model=draft.model,photoBlob=draft.photoBlob,oldModel=draft.originalModel;try{await saveAndRenderModelPhoto(b,model,photoBlob,oldModel);}catch(error){await V3Photos.markDirty(b.id,model);}releaseDraftPhoto();draft=freshDraft();screen='details';render();toast('型号修改已完成');}
   if(name==='allocate'){
     const err=validDraft();if(err)return toast(err);
     draft.sale=normalizeSale(draft.sale);
@@ -426,31 +426,24 @@ async function action(name){
     if(isPackageUnit(draft.unit)&&quantity===.5)draft.qty='半';
     const b=getBatch(),editing=draft.editIds.length>0,editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel,photoBlob=draft.photoBlob,model=draft.model,editedStoreLabel=[...draft.stores].sort((a,z)=>a-z).join(', ');
     b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
-    if(editing){
-      if(editContext==='preview'){
-        const editedStores=new Set(draft.stores);
-        b.lines=b.lines.filter(line=>line.model!==model||!editedStores.has(line.store));
-      }else{
-        const ids=new Set(draft.editIds);b.lines=b.lines.filter(v=>!ids.has(v.id));
-      }
-    }
+    if(editing){const editedStores=new Set(draft.stores);b.lines=b.lines.filter(line=>line.model!==model||!editedStores.has(line.store));}
     for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:draft.cost===''?null:Number(draft.cost),sale:draft.sale===''?null:Number(draft.sale),unit:draft.unit,packSize:isPackageUnit(draft.unit)?Number(draft.packSize):1,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
     markTransferDirty(b);
     save();
     const count=colors.length*draft.stores.length;
     const photoUpdate=editing?saveAndRenderModelPhoto(b,model,photoBlob,oldModel):null;
     if(editing){
-      releaseDraftPhoto();
-      draft=freshDraft();
-      screen='details';
+      draft.editIds=b.lines.filter(line=>line.model===model).map(line=>line.id);
+      draft.editContext='model';draft.editAll=false;draft.stores=[];
+      screen='entry';
     }else{
       draft.editIds=[];draft.editContext='';draft.originalModel=model;draft.stores=[];
       screen='entry';
     }
     render();
-    toast(editing?(editContext==='preview'?`已保存${editedStoreLabel}店修改`:'已保存型号修改'):`已增加 ${count} 条分配，颜色和数量已保留`);
+    toast(editing?`已保存${editedStoreLabel}店修改，可继续选择其他门店`:`已增加 ${count} 条分配，颜色和数量已保留`);
     if(photoUpdate){
-      try{await photoUpdate;toast(editContext==='preview'?'该门店与商品图片已更新':'型号资料与商品图片已更新');}
+      try{await photoUpdate;toast('门店资料与商品图片已更新');}
       catch(error){await V3Photos.markDirty(b.id,model);toast('资料已保存，商品图片将在下次打开时更新');}
     }
   }

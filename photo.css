@@ -88,6 +88,8 @@
 .note-submit-row>.card{height:100%;margin:0}
 .compact-action-card{display:flex;padding:10px}
 .compact-action-card .btn{min-height:100%;font-size:17px!important;font-weight:850!important}
+.allocation-head-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.allocation-head-actions .link-btn.active{background:#111;color:#fff}
 @media(max-width:560px){
   .photo-capture-card{grid-template-columns:80px minmax(0,1fr);gap:9px}
   .photo-entry-heading{display:block}
@@ -113,4 +115,5 @@
   .photo-entry-heading p{display:none}
   .color-quick-add{width:108px}
   .note-submit-row{grid-template-columns:minmax(0,1.3fr) minmax(108px,.7fr);gap:7px}
+  .allocation-head-actions{gap:5px}.allocation-head-actions .link-btn{padding:8px 10px;font-size:13px}
 }
