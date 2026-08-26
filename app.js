@@ -1,5 +1,5 @@
 const STORE_KEY = 'procure-easy-data-v3';
-const PHOTO_RENDER_VERSION = 9;
+const PHOTO_RENDER_VERSION = 10;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
@@ -19,7 +19,8 @@ let transferPackageCache = null;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
-function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',editAll:false,photoBlob:null,photoUrl:''}; }
+function freshDraft(){ return {model:'',originalModel:'',cost:'',sale:'',unit:'piece',packSize:'',qty:'1',note:'',colors:[],stores:[],editIds:[],editContext:'',editAll:false,selfRestock:false,photoBlob:null,photoUrl:''}; }
+function isSelfRestockLine(line){ return Boolean(line?.selfRestock); }
 function isPackageUnit(unit){ return unit==='pack'||unit==='hand'; }
 function packageUnitLabel(unit){ return unit==='hand'?'手':'包'; }
 function isLegacyAutomaticNote(note){return /^\d+(?:[.,]\d+)?pz\/(?:件|包|手)$/.test(String(note||'').trim());}
@@ -60,10 +61,18 @@ function exportQuantity(line){ return isPackageUnit(line.unit)?(Number(line.qty)
 function pdfQuantity(line){ return isPackageUnit(line.unit)?exportQuantity(line):`${compactNumber(line.qty)}件`; }
 function pdfQuantityWithPieces(line){if(!isPackageUnit(line.unit))return `${compactNumber(line.qty)}件`;const quantity=Number(line.qty)===.5?'半':compactNumber(line.qty),pieces=compactNumber(totalPieces(line));return `${quantity}${packageUnitLabel(line.unit)}(${pieces})`;}
 function isNumericColor(color){ return /^-?\d+(?:[.,]\d+)?$/.test(String(color||'').trim()); }
-function batchStats(b){ const pieces=b.lines.reduce((s,l)=>s+totalPieces(l),0); const models=new Set(b.lines.map(l=>l.model)).size; const amount=b.lines.reduce((s,l)=>s+(pricePending(l.cost)?0:Number(l.cost)*totalPieces(l)),0); const hasPendingCost=b.lines.some(l=>pricePending(l.cost)); return {pieces,models,amount,hasPendingCost}; }
+function isCodeColor(color){ const value=String(color||'').trim();return isNumericColor(value)||/^-[A-Za-z]$/.test(value); }
+function colorEntryLabel(color){ const value=String(color||'');return colorCategory==='number'?value.replace(/^-/,''):value; }
+function normalizeColorInput(value){
+  const input=String(value||'').trim();
+  if(/^\d+(?:[.,]\d+)?$/.test(input)||/^[A-Za-z]$/.test(input))return `-${input}`;
+  return input;
+}
+function batchStats(b){ const pieces=b.lines.reduce((s,l)=>s+totalPieces(l),0); const models=new Set(b.lines.map(l=>l.model)).size; const amount=b.lines.reduce((s,l)=>s+(pricePending(l.cost)?0:Number(l.cost)*totalPieces(l)),0); const hasPendingCost=b.lines.some(l=>!isSelfRestockLine(l)&&pricePending(l.cost)); return {pieces,models,amount,hasPendingCost}; }
 function storeSummary(b){
   const stores=new Map();
   for(const line of b.lines){
+    if(isSelfRestockLine(line))continue;
     if(!stores.has(line.store))stores.set(line.store,{store:line.store,models:new Set(),pieces:0,amount:0,hasPendingCost:false,marginCost:0,marginSales:0});
     const row=stores.get(line.store);row.models.add(line.model);row.pieces+=totalPieces(line);
     if(pricePending(line.cost))row.hasPendingCost=true;else row.amount+=Number(line.cost)*totalPieces(line);
@@ -139,8 +148,8 @@ function homeView(){
 
 function entryView(){
   const b=getBatch(); if(!b){screen='home';return homeView();}
-  const allocationTitle=draft.editIds.length?(draft.editAll?'正在统一修改全部门店数据':(draft.stores.length?`正在修改${[...draft.stores].sort((a,z)=>a-z).join(', ')}店的数据`:'正在修改基础信息（门店分配保持不变）')):'数量与门店';
-  const numberColors=state.colors.filter(isNumericColor),textColors=state.colors.filter(c=>!isNumericColor(c));
+  const allocationTitle=draft.editIds.length?(draft.editAll?'正在统一修改全部门店数据':(draft.stores.length?`正在修改${[...draft.stores].sort((a,z)=>a-z).join(', ')}店的数据`:'正在修改基础信息')):'数量与门店';
+  const numberColors=state.colors.filter(isCodeColor),textColors=state.colors.filter(c=>!isCodeColor(c));
   const visibleColors=colorCategory==='number'?numberColors:textColors;
   const allocatedStores=new Set(b.lines.filter(l=>l.model===draft.model&&(!draft.colors.length||draft.colors.includes(l.color))).map(l=>l.store));
   const previewLines=b.lines.filter(l=>l.model===draft.model).sort((a,z)=>a.store-z.store||a.color.localeCompare(z.color));
@@ -157,14 +166,14 @@ function entryView(){
         ${isPackageUnit(draft.unit)?`<div class="inside-field pack-size-field"><span>每${packageUnitLabel(draft.unit)}件数 *</span><input id="packSize" type="number" min="1" step="1" inputmode="numeric" value="${esc(draft.packSize)}" placeholder="例如：12"></div>`:''}
       </div>
     </section>
-    <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(c)}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
-    <section class="card"><div class="section-head"><h2>${esc(allocationTitle)}</h2><div class="allocation-head-actions">${draft.editIds.length?`<button class="link-btn ${draft.editAll?'active':''}" data-action="edit-all-stores">全部统一修改</button><button class="link-btn" data-action="finish-edit">完成修改</button>`:`<button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button>`}</div></div>
-      <div class="qty-allocate-row ${draft.editIds.length?'editing':''}"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${isPackageUnit(draft.unit)?'text':'number'}" ${isPackageUnit(draft.unit)?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='piece'?'件':packageUnitLabel(draft.unit)}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div>${draft.editIds.length?'':`<button class="btn btn-primary" data-action="allocate">分配到所选门店</button>`}</div>
-      <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>
+    <section class="card color-card ${colorManageMode?'color-managing':''}"><div class="section-head color-section-head"><div class="color-category-switch"><button class="${colorCategory==='number'?'active':''}" data-color-category="number">数字</button><button class="${colorCategory==='text'?'active':''}" data-color-category="text">文字</button></div><div class="color-head-actions"><button class="color-manage-btn" data-action="edit-colors" aria-label="修改全部颜色" title="修改全部颜色">${icon('edit')}</button><div class="color-quick-add"><input id="quickColor" placeholder="新增颜色" autocomplete="off"><button type="button" data-action="quick-add-color" aria-label="添加颜色">＋</button></div><button class="color-done-btn" data-action="finish-color-manage">完成整理</button><button class="color-clear-btn" data-action="clear-colors" ${draft.colors.length?'':'disabled'}>取消选择</button></div></div><div class="chips color-sortable">${visibleColors.map(c=>`<div class="color-chip-shell" data-drag-color="${esc(c)}"><button type="button" class="chip ${draft.colors.includes(c)?'active':''}" data-color="${esc(c)}">${esc(colorEntryLabel(c))}</button><button type="button" class="color-delete-btn" data-delete-color="${esc(c)}" aria-label="删除颜色 ${esc(c)}">×</button></div>`).join('')}</div><p class="color-longpress-hint">长按颜色可整理顺序或删除。</p><p class="color-manage-hint">拖动颜色可上下、左右排序；点击 × 删除预设颜色。</p></section>
+    <section class="card ${draft.selfRestock?'self-restock-active':''}"><div class="section-head"><h2>${esc(allocationTitle)}</h2><div class="allocation-head-actions">${draft.editIds.length?(draft.selfRestock?'':`<button class="link-btn ${draft.editAll?'active':''}" data-action="edit-all-stores">全部统一修改</button>`):`<button class="link-btn self-restock-toggle ${draft.selfRestock?'active':''}" data-action="toggle-self-restock">门店自行补货</button><button class="link-btn" data-action="toggle-stores">${draft.stores.filter(n=>STORES.includes(n)).length===STORES.length?'取消全选':'全选'}</button>`}</div></div>
+      ${draft.selfRestock?`<div class="self-restock-message"><strong>门店自行补货</strong><span>无需选择门店、颜色和数量，确认提交即可。</span></div>`:`<div class="qty-allocate-row ${draft.editIds.length?'editing':''}"><div class="qty-input-wrap"><button type="button" class="qty-step" data-qty-step="-1" aria-label="减少数量">−</button><input id="qty" type="${isPackageUnit(draft.unit)?'text':'number'}" ${isPackageUnit(draft.unit)?'inputmode="decimal"':'min="1" step="1" inputmode="numeric"'} value="${esc(draft.qty)}" aria-label="数量"><span>${draft.unit==='piece'?'件':packageUnitLabel(draft.unit)}</span><button type="button" class="qty-step" data-qty-step="1" aria-label="增加数量">＋</button></div>${draft.editIds.length?'':`<button class="btn btn-primary" data-action="allocate">分配到所选门店</button>`}</div>
+      <div class="store-grid">${STORES.map(n=>`<button class="store ${draft.stores.includes(n)?'active':''} ${allocatedStores.has(n)?'allocated':''}" data-store="${n}">${allocatedStores.has(n)?'<span class="allocated-mark">✓</span>':''}${n}</button>`).join('')}</div><p class="hint">已选 ${draft.stores.filter(n=>STORES.includes(n)).length} 家门店 · <span class="allocated-legend">✓ 已分配过</span></p>`}
     </section>
     <div class="note-submit-row"><section class="card model-note-card"><div class="section-head"><h2>型号备注 <small class="optional">选填</small></h2></div><textarea id="note" class="model-note-input" rows="2" placeholder="例如：包装要求、尺码或其他说明">${esc(draft.note)}</textarea></section>
     <section class="card compact-action-card">${draft.editIds.length?`<button class="btn btn-primary btn-wide" data-action="allocate">确认修改</button>`:`<button class="btn btn-secondary btn-wide" data-action="finish-model">确认提交</button>`}</section></div>
-    ${previewStores.length?`<section class="allocation-preview"><div class="preview-head"><div><h2>已分配预览</h2><div class="preview-model"><b>${esc(draft.model)}</b><span>${priceDisplay(previewLines[0]?.cost)} <em>/</em> ${priceDisplay(previewLines[0]?.sale)}</span></div></div><strong>共 ${compactNumber(previewTotal)} 件</strong></div><div class="preview-list">${previewStores.map(g=>`<div class="preview-row ${draft.editContext==='preview'&&g.ids.some(id=>draft.editIds.includes(id))?'editing':''}"><span class="preview-store">${g.store}</span><div class="preview-items">${g.lines.map(l=>`<div>${l.color?`<small>${esc(l.color)}</small>`:'<small>无颜色</small>'}<b>× ${quantityDisplay(l)}</b></div>`).join('')}</div><div class="preview-actions"><button data-edit-preview-store="${g.store}" aria-label="修改 ${g.store} 店分配" title="修改">${icon('edit')}</button><button class="delete" data-delete-preview-store="${g.store}" aria-label="删除 ${g.store} 店分配" title="删除">${icon('delete')}</button></div></div>`).join('')}</div></section>`:''}
+    ${previewStores.length?`<section class="allocation-preview"><div class="preview-head"><div><h2>${previewLines.some(isSelfRestockLine)?'补货预览':'已分配预览'}</h2><div class="preview-model"><b>${esc(draft.model)}</b><span>${priceDisplay(previewLines[0]?.cost)} <em>/</em> ${priceDisplay(previewLines[0]?.sale)}</span></div></div>${previewLines.some(isSelfRestockLine)?'':`<strong>共 ${compactNumber(previewTotal)} 件</strong>`}</div><div class="preview-list">${previewLines.some(isSelfRestockLine)?'<div class="self-restock-preview">门店自行补货</div>':previewStores.map(g=>`<div class="preview-row ${draft.editContext==='preview'&&g.ids.some(id=>draft.editIds.includes(id))?'editing':''}"><span class="preview-store">${g.store}</span><div class="preview-items">${g.lines.map(l=>`<div>${l.color?`<small>${esc(l.color)}</small>`:'<small>无颜色</small>'}<b>× ${quantityDisplay(l)}</b></div>`).join('')}</div><div class="preview-actions"><button data-edit-preview-store="${g.store}" aria-label="修改 ${g.store} 店分配" title="修改">${icon('edit')}</button><button class="delete" data-delete-preview-store="${g.store}" aria-label="删除 ${g.store} 店分配" title="删除">${icon('delete')}</button></div></div>`).join('')}</div></section>`:''}
   </div><nav class="bottom"><div class="bottom-inner"><button class="btn btn-light" data-action="back-home">采购列表</button><button class="btn btn-primary" data-action="details">查看明细（${b.lines.length}）</button></div></nav>`;
 }
 
@@ -175,7 +184,7 @@ function detailsView(){
     <section class="detail-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg><input id="detailSearch" value="${esc(detailSearchTerm)}" placeholder="模糊搜索当前采购型号" autocomplete="off"><button data-action="clear-search" aria-label="清除搜索">×</button></section>
     <section class="card no-print transfer-launch-card"><button class="windows-transfer-button" data-action="windows"><span class="windows-transfer-icon">W</span><span><b>发送到 Windows</b></span><i>›</i></button><div class="windows-transfer-state ${transfer.key}"><span></span>${esc(transfer.label)}</div></section>
     <section class="card no-print"><div class="toolbar detail-toolbar"><button class="btn btn-secondary" data-action="photos">图片分享</button><button class="btn btn-secondary" data-action="summary">查看汇总</button><button class="btn btn-secondary" data-action="excel">导出 Excel</button><button class="btn btn-secondary" data-action="pdf">导出 PDF</button></div></section>
-    <div id="modelList">${modelGroups.length?modelGroups.map(m=>`<div class="swipe-wrap" data-search-model="${esc(m.model.toLowerCase())}"><div class="swipe-actions no-print"><button data-edit-model="${esc(m.model)}">修改</button><button class="delete" data-delete-model="${esc(m.model)}">删除</button></div><section class="card purchase-model swipe-content"><div class="purchase-top"><b>${esc(m.model)}</b><span class="purchase-price"><i>进价/卖价</i><strong>${priceDisplay(m.cost)} <em>/</em> ${priceDisplay(m.sale)}</strong></span></div>${m.note?`<div class="model-note-detail"><span>备注</span><p>${esc(m.note)}</p></div>`:''}<div class="color-list">${m.items.map(g=>{const colors=g.colors.filter(Boolean);return `<div class="color-row"><div class="color-info ${colors.length?'':'no-color'}">${colors.length?`<small>${colors.map(esc).join('　')}</small>`:''}<p>门店 ${g.stores.join(', ')} <strong>×${shareUnit(g)}</strong></p></div></div>`;}).join('')}</div></section></div>`).join(''):`<div class="card empty"><div class="empty-icon">📦</div>还没有分配商品</div>`}</div>
+    <div id="modelList">${modelGroups.length?modelGroups.map(m=>`<div class="swipe-wrap" data-search-model="${esc(m.model.toLowerCase())}"><div class="swipe-actions no-print"><button data-edit-model="${esc(m.model)}">修改</button><button class="delete" data-delete-model="${esc(m.model)}">删除</button></div><section class="card purchase-model swipe-content"><div class="purchase-top"><b>${esc(m.model)}</b><span class="purchase-price"><i>进价/卖价</i><strong>${priceDisplay(m.cost)} <em>/</em> ${priceDisplay(m.sale)}</strong></span></div>${m.note?`<div class="model-note-detail"><span>备注</span><p>${esc(m.note)}</p></div>`:''}<div class="color-list">${m.items.map(g=>g.selfRestock?`<div class="color-row self-restock-detail"><strong>门店自行补货</strong></div>`:(()=>{const colors=g.colors.filter(Boolean);return `<div class="color-row"><div class="color-info ${colors.length?'':'no-color'}">${colors.length?`<small>${colors.map(esc).join('　')}</small>`:''}<p>门店 ${g.stores.join(', ')} <strong>×${shareUnit(g)}</strong></p></div></div>`;})()).join('')}</div></section></div>`).join(''):`<div class="card empty"><div class="empty-icon">📦</div>还没有分配商品</div>`}</div>
   </div><nav class="bottom"><div class="bottom-inner"><button class="btn btn-light" data-action="home-from-details">采购列表</button><button class="btn btn-primary" data-action="continue">继续录入</button></div></nav>`;
 }
 
@@ -234,6 +243,7 @@ function modalView(){
     </section></div>`;
   }
   if(modal.type==='color') return `<div class="modal-backdrop centered-modal"><div class="modal color-add-modal"><div class="color-manager-head"><span class="color-manager-icon color-add-icon">＋</span><div><h2>增加颜色</h2><p class="modal-hint">支持数字编号、外文或中文颜色，增加后会自动选中。</p></div></div><div class="color-add-field"><label for="newColor">颜色名称或编号</label><input id="newColor" class="field" placeholder="例如：-5、rosso、红" autocomplete="off"></div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-color">增加并选中</button></div></div></div>`;
+  if(modal.type==='edit-saved') return `<div class="modal-backdrop centered-modal"><section class="modal edit-saved-modal" role="dialog" aria-modal="true" aria-label="修改完成"><div class="edit-saved-mark">✓</div><h2>已修改</h2><p>本次修改已经保存。</p><div class="modal-actions"><button class="btn btn-light" data-action="continue-edit">继续修改</button><button class="btn btn-primary" data-action="finish-edit">完成修改</button></div></section></div>`;
   if(modal.type==='edit-colors') return `<div class="modal-backdrop centered-modal"><div class="modal color-manager"><div class="color-manager-head"><span class="color-manager-icon">${icon('edit')}</span><div><h2>修改全部颜色</h2><p class="modal-hint">直接修改名称，保存后所有采购记录中的对应颜色会同步更新。</p></div></div><div class="color-edit-list">${state.colors.map((c,i)=>`<div><label>${i+1}</label><input class="field" data-color-original="${esc(c)}" value="${esc(c)}" autocomplete="off"></div>`).join('')}</div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-colors-edit">保存全部</button></div></div></div>`;
   if(modal.type==='sort-colors') return `<div class="modal-backdrop centered-modal color-sort-backdrop"><div class="modal color-sort-manager"><div class="color-manager-head"><span class="color-manager-icon">${icon('sort')}</span><div><h2>调整颜色顺序</h2><p class="modal-hint">${modal.selected?'再点一个目标位置，颜色会移动到那里。':'先点要移动的颜色，再点目标位置，可跨行上下、左右调整。'}</p></div></div><div class="color-sort-grid">${modal.order.map((c,i)=>`<button type="button" class="color-sort-item ${modal.selected===c?'selected':''}" data-sort-color="${esc(c)}"><span>${i+1}</span><b>${esc(c)}</b><i>${modal.selected===c?'已选中':'点击选择'}</i></button>`).join('')}</div><div class="modal-actions"><button class="btn btn-light" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="save-color-order">保存顺序</button></div></div></div>`;
   if(modal.type==='summary'){
@@ -258,13 +268,17 @@ function persistDraftNote(){
   if(changed){markTransferDirty(b);save();V3Photos.markDirty(b.id,draft.model);}return lines;
 }
 function normalizeSale(v){ const s=String(v).trim(); if(!s)return ''; return s.includes('.')?Number(s).toFixed(2):`${parseInt(s,10)}.99`; }
-function suggestedSale(cost){ return globalThis.V3Pricing?.suggest(cost)||''; }
+function suggestedSale(cost){
+  const value=globalThis.V3Pricing?.suggest?.(cost);
+  if(value!==undefined&&value!==null&&value!=='')return String(value);
+  return '';
+}
 function stepSale(value,step,cost){
   const current=Number(value),fallback=Number(suggestedSale(cost));
   const base=Number.isFinite(current)?current:(Number.isFinite(fallback)?fallback:.99);
   return Math.max(.99,base+step).toFixed(2);
 }
-function validDraft(options={}){ const requireStores=options.requireStores!==false;syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(isPackageUnit(draft.unit)&&Number(draft.packSize)<1)return `请输入每${packageUnitLabel(draft.unit)}件数`; const qty=parseQuantity(draft.qty,draft.unit); if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量'; if(requireStores&&!draft.stores.length)return '请选择至少一家门店'; return ''; }
+function validDraft(options={}){ const requireStores=options.requireStores!==false,requireAllocation=options.requireAllocation!==false;syncDraft(); if(!draft.model)return '请输入型号'; if(draft.cost!==''&&(!Number.isFinite(Number(draft.cost))||Number(draft.cost)<0))return '请输入正确的进价'; if(draft.sale!==''&&(!Number.isFinite(Number(draft.sale))||Number(draft.sale)<0))return '请输入正确的卖价'; if(requireAllocation&&isPackageUnit(draft.unit)&&Number(draft.packSize)<1)return `请输入每${packageUnitLabel(draft.unit)}件数`; if(requireAllocation){const qty=parseQuantity(draft.qty,draft.unit);if(!Number.isFinite(qty)||qty<=0||(draft.unit==='piece'&&(!Number.isInteger(qty)||qty<1)))return '请输入正确的数量';} if(requireStores&&!draft.stores.length)return '请选择至少一家门店'; return ''; }
 function applyDetailFilter(){const input=document.querySelector('#detailSearch');if(!input)return;detailSearchTerm=input.value;document.querySelectorAll('[data-search-model]').forEach(el=>el.hidden=!fuzzyMatch(el.dataset.searchModel,detailSearchTerm));}
 
 function bind(){
@@ -356,7 +370,7 @@ function bind(){
     let photoRecord=null;
     try{photoRecord=await V3Photos.get(batch.id,first.model);}catch(error){}
     releaseDraftPhoto();
-    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[],editIds:lines.map(l=>l.id),editContext:'model',editAll:false};
+    draft={...freshDraft(),model:first.model,originalModel:first.model,cost:draftPrice(first.cost),sale:draftPrice(first.sale),unit:first.unit,packSize:isPackageUnit(first.unit)?String(first.packSize):'',qty:isSelfRestockLine(first)?'1':draftQuantity(first),note:first.note||'',colors:[...new Set(lines.map(l=>l.color).filter(Boolean))],stores:[],editIds:lines.map(l=>l.id),editContext:'model',editAll:false,selfRestock:lines.every(isSelfRestockLine)};
     if(photoRecord?.sourceBlob)setDraftPhoto(photoRecord.sourceBlob);
     screen='entry';render();
     if(!photoRecord?.sourceBlob)toast('未找到原照片，可修改数据或重新拍照');
@@ -388,7 +402,8 @@ function bind(){
   if(quickColor)quickColor.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();action('quick-add-color');}};
   const cost=document.querySelector('#cost'),sale=document.querySelector('#sale'),note=document.querySelector('#note');
   const updateGrossMargin=()=>{const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale?.value);};
-  if(cost)cost.oninput=()=>{const suggestion=suggestedSale(cost.value);if(sale)sale.value=suggestion;draft.cost=cost.value.trim();draft.sale=suggestion;updateGrossMargin();};
+  const applySuggestedSale=()=>{const suggestion=suggestedSale(cost?.value);if(sale)sale.value=suggestion;draft.cost=cost?.value.trim()||'';draft.sale=suggestion;updateGrossMargin();};
+  if(cost){cost.oninput=applySuggestedSale;cost.onchange=applySuggestedSale;}
   if(sale)sale.oninput=updateGrossMargin;
   if(note)note.oninput=()=>{draft.note=note.value;};
   if(cost)cost.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();syncDraft();sale?.focus();}};
@@ -410,27 +425,29 @@ async function action(name){
   if(name==='take-photo'){document.querySelector('#photoInput')?.click();}
   if(name==='add-color'){syncDraft();modal={type:'color'};render();setTimeout(()=>document.querySelector('#newColor')?.focus(),0);}
   if(name==='clear-colors'){syncDraft();draft.colors=[];render();toast('已取消颜色选择');}
+  if(name==='toggle-self-restock'){syncDraft();draft.selfRestock=!draft.selfRestock;if(draft.selfRestock)draft.stores=[];render();toast(draft.selfRestock?'已开启门店自行补货':'已恢复门店分配');}
   if(name==='edit-colors'){syncDraft();modal={type:'edit-colors'};render();setTimeout(()=>document.querySelector('[data-color-original]')?.focus(),0);}
   if(name==='sort-colors'){syncDraft();modal={type:'sort-colors',order:[...state.colors],selected:null};render();}
   if(name==='close-modal'){revokeGalleryUrls();modal=null;render();}
-  if(name==='save-color'){const c=document.querySelector('#newColor').value.trim();if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isNumericColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
-  if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=input?.value.trim();if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isNumericColor(c)?'number':'text';save();render();toast(`已增加并选中 ${c}`);}
+  if(name==='save-color'){const c=normalizeColorInput(document.querySelector('#newColor').value);if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isCodeColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
+  if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=normalizeColorInput(input?.value);if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isCodeColor(c)?'number':'text';save();render();toast(`已增加并选中 ${colorEntryLabel(c)}`);}
   if(name==='finish-color-manage'){syncDraft();colorManageMode=false;render();toast('颜色顺序已保存');}
   if(name==='save-colors-edit'){const inputs=[...document.querySelectorAll('[data-color-original]')],nextColors=inputs.map(input=>input.value.trim());if(inputs.length!==state.colors.length)return toast('颜色数据未加载完整，请重新打开');if(nextColors.some(c=>!c))return toast('颜色名称不能为空');if(new Set(nextColors).size!==nextColors.length)return toast('颜色名称不能重复');const changes=new Map(inputs.map(input=>[input.dataset.colorOriginal,input.value.trim()]));state.colors=nextColors;draft.colors=draft.colors.map(c=>changes.get(c)??c);state.batches.forEach(batch=>{batch.lines.forEach(line=>{if(changes.has(line.color))line.color=changes.get(line.color);});markTransferDirty(batch);});save();for(const batch of state.batches)for(const model of new Set(batch.lines.map(line=>line.model)))await V3Photos.markDirty(batch.id,model);modal=null;render();toast('全部颜色名称已保存');}
   if(name==='save-color-order'){if(!modal?.order?.length)return toast('没有可保存的颜色');state.colors=[...modal.order];save();modal=null;render();toast('颜色顺序已保存');}
-  if(name==='toggle-stores'){syncDraft();const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
+  if(name==='toggle-stores'){syncDraft();draft.selfRestock=false;const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
   if(name==='edit-all-stores'){syncDraft();const modelStores=[...new Set(getBatch().lines.filter(line=>line.model===draft.model&&STORES.includes(line.store)).map(line=>line.store))].sort((a,z)=>a-z);draft.editAll=true;draft.stores=modelStores;render();toast('已选择该型号的全部门店');}
-  if(name==='finish-edit'){releaseDraftPhoto();draft=freshDraft();screen='details';render();toast('型号修改已完成');}
+  if(name==='continue-edit'){modal=null;render();toast('可以继续修改');}
+  if(name==='finish-edit'){modal=null;releaseDraftPhoto();draft=freshDraft();screen='details';render();toast('型号修改已完成');}
   if(name==='allocate'){
     const editing=draft.editIds.length>0;
-    const err=validDraft({requireStores:!editing});if(err)return toast(err);
+    const err=validDraft({requireStores:!editing&&!draft.selfRestock,requireAllocation:!draft.selfRestock});if(err)return toast(err);
     draft.sale=normalizeSale(draft.sale);
     const quantity=parseQuantity(draft.qty,draft.unit);
     if(isPackageUnit(draft.unit)&&quantity===.5)draft.qty='半';
     const b=getBatch(),editContext=draft.editContext,colors=draft.colors.length?draft.colors:[''],oldModel=draft.originalModel||draft.model,photoBlob=draft.photoBlob,model=draft.model,editedStoreLabel=[...draft.stores].sort((a,z)=>a-z).join(', '),costValue=draft.cost===''?null:Number(draft.cost),saleValue=draft.sale===''?null:Number(draft.sale),packSizeValue=isPackageUnit(draft.unit)?Number(draft.packSize):1;
     if(editing&&oldModel!==model&&b.lines.some(line=>line.model===model))return toast(`型号 ${model} 已存在，请使用其他型号`);
     if(editing){
-      b.lines.forEach(line=>{if(line.model===oldModel){line.model=model;line.cost=costValue;line.sale=saleValue;line.unit=draft.unit;line.packSize=packSizeValue;line.note=draft.note;}});
+      b.lines.forEach(line=>{if(line.model===oldModel){line.model=model;line.cost=costValue;line.sale=saleValue;if(!isSelfRestockLine(line)){line.unit=draft.unit;line.packSize=packSizeValue;}line.note=draft.note;}});
       if(draft.stores.length){const editedStores=new Set(draft.stores);b.lines=b.lines.filter(line=>line.model!==model||!editedStores.has(line.store));}
     }else b.lines.forEach(line=>{if(line.model===model)line.note=draft.note;});
     for(const color of colors)for(const store of draft.stores)b.lines.push({id:uid(),model,cost:costValue,sale:saleValue,unit:draft.unit,packSize:packSizeValue,qty:quantity,color,store,note:draft.note,createdAt:Date.now()});
@@ -452,10 +469,28 @@ async function action(name){
       try{await photoUpdate;toast('门店资料与商品图片已更新');}
       catch(error){await V3Photos.markDirty(b.id,model);toast('资料已保存，商品图片将在下次打开时更新');}
     }
+    if(editing){modal={type:'edit-saved'};render();}
   }
   if(name==='clear-search'){detailSearchTerm='';render();setTimeout(()=>document.querySelector('#detailSearch')?.focus(),0);}
   if(name==='cancel-edit'){const returnToDetails=draft.editContext==='model';releaseDraftPhoto();draft=freshDraft();screen=returnToDetails?'details':'entry';render();}
-  if(name==='finish-model'){const modelLines=persistDraftNote();if(!draft.model)return toast('当前还没有输入型号');if(!modelLines.length)return toast('请先分配当前型号');const existing=await V3Photos.get(getBatch().id,draft.model);if(!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;await completeCurrentModel();}
+  if(name==='finish-model'){
+    syncDraft();const b=getBatch();
+    if(!draft.model)return toast('当前还没有输入型号');
+    const existing=await V3Photos.get(b.id,draft.model);if(!draft.photoBlob&&!existing?.sourceBlob)return toast('请先拍摄商品照片');
+    if(draft.selfRestock){
+      const err=validDraft({requireStores:false,requireAllocation:false});if(err)return toast(err);
+      if(b.lines.some(line=>line.model===draft.model&&!isSelfRestockLine(line)))return toast('该型号已有门店分配，请修改现有型号或使用新型号');
+      if((pricePending(draft.cost)||pricePending(draft.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交？'))return;
+      const selfModel=draft.model,oldLines=b.lines.filter(line=>line.model===selfModel),costValue=draft.cost===''?null:Number(draft.cost),saleValue=draft.sale===''?null:Number(draft.sale);
+      b.lines=b.lines.filter(line=>line.model!==selfModel);
+      b.lines.push({id:uid(),model:selfModel,cost:costValue,sale:saleValue,unit:'piece',packSize:1,qty:0,color:'',store:0,note:draft.note,selfRestock:true,createdAt:Date.now()});
+      save();
+      if(!await completeCurrentModel()){b.lines=b.lines.filter(line=>line.model!==selfModel);b.lines.push(...oldLines);save();}
+      return;
+    }
+    const modelLines=persistDraftNote();if(!modelLines.length)return toast('请先分配当前型号');
+    if(modelLines.some(l=>pricePending(l.cost)||pricePending(l.sale))&&!confirm('进价或卖价尚未填写，图片和明细中会显示“待定”。是否确定提交并输入下一个款式？'))return;await completeCurrentModel();
+  }
   if(name==='windows'){await openTransferPreview();}
   if(name==='drive-settings'){modal={type:'drive-settings'};render();setTimeout(()=>document.querySelector('#googleClientId')?.focus(),0);}
   if(name==='back-transfer-preview'){if(transferPreviewCache){modal={type:'transfer-preview',preview:transferPreviewCache};render();}else await openTransferPreview();}
@@ -510,6 +545,8 @@ function allocationColorOrder(colors){
   });
 }
 function outputAllocationRows(lines){
+  const selfRestockLine=lines.find(isSelfRestockLine);
+  if(selfRestockLine)return [{...selfRestockLine,selfRestock:true,colors:[],stores:[],createdAt:selfRestockLine.createdAt||0}];
   const storeGroups=new Map();
   for(const line of [...lines].sort((a,z)=>(a.createdAt||0)-(z.createdAt||0)||a.store-z.store)){
     const signature=[line.unit,line.qty,line.packSize].join('\u001f');
@@ -529,7 +566,7 @@ function outputAllocationRows(lines){
     .sort((a,z)=>a.createdAt-z.createdAt||a.stores[0]-z.stores[0]);
 }
 function imageAllocationRows(lines){
-  return outputAllocationRows(lines).map(group=>({...group,color:group.colors.join('  '),quantity:shareUnit(group)}));
+  return outputAllocationRows(lines).map(group=>group.selfRestock?({...group,color:'',quantity:''}):({...group,color:group.colors.join('  '),quantity:shareUnit(group)}));
 }
 function outputModelGroups(batch){
   const models=new Map();
@@ -586,6 +623,7 @@ async function createProductImage(batch,model,sourceBlob){
   const measureCanvas=document.createElement('canvas'),measure=measureCanvas.getContext('2d');
   measure.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
   const prepared=allocations.map(group=>{
+    if(group.selfRestock)return {...group,storeLines:['门店自行补货'],colorLines:[''],height:rowPad*2+lineH};
     const storeLines=wrapStoreTokens(measure,group.stores,520);
     measure.font='600 40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
     const colorLines=wrapCanvasTokens(measure,group.color,245);
@@ -622,8 +660,8 @@ async function createProductImage(batch,model,sourceBlob){
       const lineY=top+rowPad+lineH/2+index*lineH;
       c.textAlign='left';
       c.font='600 40px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(row.colorLines[index]||'',28,lineY);
-      c.font='46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(row.storeLines[index]||'',300,lineY);
-      if(index===0){c.textAlign='right';c.font='700 42px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(`×${row.quantity}`,W-28,lineY);}
+      c.font=`${row.selfRestock?'700':'400'} 46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;c.fillText(row.storeLines[index]||'',row.selfRestock?28:300,lineY);
+      if(index===0&&!row.selfRestock){c.textAlign='right';c.font='700 42px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';c.fillText(`×${row.quantity}`,W-28,lineY);}
     }
     y+=row.height;separator(y);
   }
@@ -725,7 +763,7 @@ function excelModelRows(batch){
       stores:new Map()
     });
     const row=groups.get(line.model),store=Number(line.store);
-    row.stores.set(store,(row.stores.get(store)||0)+totalPieces(line));
+    if(!isSelfRestockLine(line))row.stores.set(store,(row.stores.get(store)||0)+totalPieces(line));
   }
   return [...groups.values()];
 }
@@ -832,6 +870,7 @@ function purchaseTransferData(batch){
       quantity:Number(line.qty),
       color:line.color||'',
       store:Number(line.store),
+      selfRestock:isSelfRestockLine(line),
       note:line.note||'',
       totalPieces:totalPieces(line),
       createdAt:line.createdAt||null
@@ -941,10 +980,10 @@ function buildPdf(b){
   const wrapStores=(stores,maxWidth,font='29px')=>{c.save();c.font=`${font} ${fontFamily}`;const values=stores.map(String),lines=[];let current='';values.forEach((store,i)=>{const next=current?`${current}, ${store}`:store;const reserve=i<values.length-1?',':'';if(!current||c.measureText(next+reserve).width<=maxWidth)current=next;else{lines.push(`${current},`);current=store;}});if(current||!lines.length)lines.push(current);c.restore();return lines;};
   const multiline=(lines,x,w,top,height,font='29px')=>{const lh=37,total=(lines.length-1)*lh;c.save();c.fillStyle='#111';c.font=`${font} ${fontFamily}`;c.textAlign='center';c.textBaseline='middle';lines.forEach((v,i)=>c.fillText(v,x+w/2,top+height/2-total/2+i*lh));c.restore();};
   const multilineLeft=(lines,x,w,top,height,font='29px')=>{const lh=37,total=(lines.length-1)*lh;c.save();c.fillStyle='#111';c.font=`${font} ${fontFamily}`;c.textAlign='left';c.textBaseline='middle';lines.forEach((v,i)=>c.fillText(v,x+14,top+height/2-total/2+i*lh));c.restore();};
-  const itemHeight=item=>Math.max(63,24+Math.max(1,item.displayColors.length,wrapStores(item.stores,widths[2]-28).length)*37);
+  const itemHeight=item=>Math.max(63,24+Math.max(1,item.displayColors.length,item.selfRestock?1:wrapStores(item.stores,widths[2]-28).length)*37);
   const newPage=()=>{if(canvas)pages.push(canvas.toDataURL('image/jpeg',.94));canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,W,H);c.fillStyle='#111';c.textAlign='center';c.textBaseline='alphabetic';c.font=`bold 38px ${fontFamily}`;c.fillText('小潘家采购分货单',W/2,58);c.textAlign='left';c.font=`29px ${fontFamily}`;c.fillText(`供应商名称：${b.supplier}`,margin+7,101);const [year,month,day]=String(b.date||'').split('-').map(Number);c.textAlign='right';c.fillText(`${year||''}年　${month||''}　月　${day||''}　日`,W-margin-7,101);y=112;c.fillStyle='#c7c7c7';c.fillRect(margin,y,tableW,headerH);let x=margin;heads.forEach((h,i)=>{centered(h,x,widths[i],y,headerH,'bold 25px');x+=widths[i];});line(margin,y,W-margin,y);line(margin,y+headerH,W-margin,y+headerH);x=margin;for(const w of widths){line(x,y,x,y+headerH);x+=w;}line(W-margin,y,W-margin,y+headerH);y+=headerH;};
   newPage();
-  for(const model of models){const heights=model.items.map(itemHeight),modelLines=wrap(model.model,widths[0]-16,'30px'),modelH=24+modelLines.length*37,noteLines=wrap(model.note||'',widths[6]-24,'24px'),noteH=model.note?24+noteLines.length*31:63;let groupH=heights.reduce((s,n)=>s+n,0),requiredH=Math.max(modelH,noteH);if(requiredH>groupH){heights[heights.length-1]+=requiredH-groupH;groupH=requiredH;}const pageCapacity=pageBottom-(112+headerH);if(groupH<=pageCapacity&&y+groupH>pageBottom)newPage();let i=0;while(i<model.items.length){if(y+heights[i]>pageBottom)newPage();const startY=y,startIndex=i,xModel=margin,xColor=xModel+widths[0],xStores=xColor+widths[1],xStoreCount=xStores+widths[2],xQty=xStoreCount+widths[3],xCost=xQty+widths[4],xNote=xCost+widths[5];while(i<model.items.length&&y+heights[i]<=pageBottom){const item=model.items[i],h=heights[i],colors=item.displayColors.length?item.displayColors:[''];multiline(colors,xColor,widths[1],y,h);multilineLeft(wrapStores(item.stores,widths[2]-28),xStores,widths[2],y,h);centered(`${item.stores.length}家`,xStoreCount,widths[3],y,h,'25px');centered(pdfQuantityWithPieces(item),xQty,widths[4],y,h,'27px');y+=h;i++;if(i<model.items.length&&y+heights[i]<=pageBottom)line(xColor,y,xCost,y,true);}const endY=y;multiline(modelLines,xModel,widths[0],startY,endY-startY,'30px');centered(euro(model.cost),xCost,widths[5],startY,endY-startY,'27px');if(model.note)multiline(noteLines,xNote,widths[6],startY,endY-startY,'24px');line(margin,startY,W-margin,startY);line(margin,endY,W-margin,endY);for(const x of [xModel,xColor,xStores,xStoreCount,xQty,xCost,xNote,W-margin])line(x,startY,x,endY);if(i===startIndex)break;if(i<model.items.length)newPage();}}
+  for(const model of models){const heights=model.items.map(itemHeight),modelLines=wrap(model.model,widths[0]-16,'30px'),modelH=24+modelLines.length*37,noteLines=wrap(model.note||'',widths[6]-24,'24px'),noteH=model.note?24+noteLines.length*31:63;let groupH=heights.reduce((s,n)=>s+n,0),requiredH=Math.max(modelH,noteH);if(requiredH>groupH){heights[heights.length-1]+=requiredH-groupH;groupH=requiredH;}const pageCapacity=pageBottom-(112+headerH);if(groupH<=pageCapacity&&y+groupH>pageBottom)newPage();let i=0;while(i<model.items.length){if(y+heights[i]>pageBottom)newPage();const startY=y,startIndex=i,xModel=margin,xColor=xModel+widths[0],xStores=xColor+widths[1],xStoreCount=xStores+widths[2],xQty=xStoreCount+widths[3],xCost=xQty+widths[4],xNote=xCost+widths[5];while(i<model.items.length&&y+heights[i]<=pageBottom){const item=model.items[i],h=heights[i],colors=item.displayColors.length?item.displayColors:[''];multiline(colors,xColor,widths[1],y,h);if(item.selfRestock){multilineLeft(['门店自行补货'],xStores,widths[2],y,h,'bold 27px');centered('—',xStoreCount,widths[3],y,h,'25px');centered('—',xQty,widths[4],y,h,'27px');}else{multilineLeft(wrapStores(item.stores,widths[2]-28),xStores,widths[2],y,h);centered(`${item.stores.length}家`,xStoreCount,widths[3],y,h,'25px');centered(pdfQuantityWithPieces(item),xQty,widths[4],y,h,'27px');}y+=h;i++;if(i<model.items.length&&y+heights[i]<=pageBottom)line(xColor,y,xCost,y,true);}const endY=y;multiline(modelLines,xModel,widths[0],startY,endY-startY,'30px');centered(euro(model.cost),xCost,widths[5],startY,endY-startY,'27px');if(model.note)multiline(noteLines,xNote,widths[6],startY,endY-startY,'24px');line(margin,startY,W-margin,startY);line(margin,endY,W-margin,endY);for(const x of [xModel,xColor,xStores,xStoreCount,xQty,xCost,xNote,W-margin])line(x,startY,x,endY);if(i===startIndex)break;if(i<model.items.length)newPage();}}
   pages.push(canvas.toDataURL('image/jpeg',.94));
   const pdf=jpegPagesToPdf(pages,W,H),name=safeName(`采购单_${b.supplier}_${b.date}.pdf`),file=new File([pdf],name,{type:'application/pdf'});
   return {pdf,name,file,pages,supplier:b.supplier};
