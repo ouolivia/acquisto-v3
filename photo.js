@@ -52,6 +52,19 @@
     if(!current?.sourceBlob)throw new Error('缺少商品照片');
     return put({...current,batchId,model,renderedBlob,filename,renderVersion,dirty:false,renderedAt:Date.now()});
   }
+  async function saveComplete(batchId,model,sourceBlob,renderedBlob,filename,renderVersion=1,oldModel='',preserveSent=false){
+    const fromModel=oldModel&&oldModel!==model?oldModel:model;
+    return transaction('readwrite',store=>{
+      const request=store.get(key(batchId,fromModel));
+      request.onsuccess=()=>{
+        const current=request.result||{};
+        store.put({...current,batchId,model,key:key(batchId,model),sourceBlob,
+          renderedBlob,filename,renderVersion,dirty:false,sentAt:preserveSent?(current.sentAt||null):null,
+          renderedAt:Date.now(),updatedAt:Date.now()});
+        if(fromModel!==model)store.delete(key(batchId,fromModel));
+      };
+    });
+  }
   async function markDirty(batchId,model){
     const current=await get(batchId,model);
     if(current)return put({...current,dirty:true,sentAt:null});
@@ -90,8 +103,11 @@
     return new Promise((resolve,reject)=>{
       const url=URL.createObjectURL(blob);
       const image=new Image();
-      image.onload=()=>{URL.revokeObjectURL(url);resolve(image);};
-      image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('无法读取照片'));};
+      let done=false;
+      const finish=(error)=>{if(done)return;done=true;clearTimeout(timer);URL.revokeObjectURL(url);error?reject(error):resolve(image);};
+      const timer=setTimeout(()=>finish(new Error('照片读取超时')),30000);
+      image.onload=()=>finish();
+      image.onerror=()=>finish(new Error('无法读取照片'));
       image.src=url;
     });
   }
@@ -129,5 +145,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,markDirty,markSent,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
 })();
