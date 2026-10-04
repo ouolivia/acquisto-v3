@@ -1,14 +1,17 @@
-.transfer-launch-card{padding:9px!important;display:grid;gap:6px}
-.windows-transfer-button{width:100%;border:0;border-radius:15px;background:linear-gradient(135deg,#101113 0%,#202329 100%);color:#fff;display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:10px;text-align:left;padding:9px 12px;box-shadow:0 10px 24px rgba(17,17,17,.14)}
-.windows-transfer-button:active{transform:scale(.992)}
-.windows-transfer-icon,.transfer-head-icon{display:grid;place-items:center;background:#fff;color:#111;font-weight:900;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
-.windows-transfer-icon{width:36px;height:36px;border-radius:11px;font-size:18px}
+.transfer-launch-card{padding:9px!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.transfer-launch-option{display:grid;min-width:0;align-content:start;gap:6px}
+.windows-transfer-button,.promotion-transfer-button{width:100%;min-width:0;border:0;border-radius:15px;background:linear-gradient(135deg,#101113 0%,#202329 100%);color:#fff;display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;text-align:left;padding:9px 12px;box-shadow:0 10px 24px rgba(17,17,17,.14)}
+.windows-transfer-button:active,.promotion-transfer-button:active{transform:scale(.992)}
+.windows-transfer-icon,.promotion-transfer-icon,.transfer-head-icon{display:grid;place-items:center;background:#fff;color:#111;font-weight:900;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
+.windows-transfer-icon,.promotion-transfer-icon{width:36px;height:36px;border-radius:11px;font-size:18px}
+.promotion-transfer-icon{font-size:16px}
 .transfer-head-icon{width:54px;height:54px;border-radius:16px;font-size:25px}
-.windows-transfer-button span:nth-child(2){display:grid}
-.windows-transfer-button b{font-size:15px;letter-spacing:.01em}
-.windows-transfer-button>i{font-size:22px;font-style:normal;color:rgba(255,255,255,.6)}
-.windows-transfer-state{display:flex;align-items:center;gap:6px;padding:0 3px;color:#8b8d91;font-size:11px;font-weight:650}
-.windows-transfer-state span,.drive-dot{width:8px;height:8px;border-radius:99px;background:#c8c9cc;display:inline-block}
+.windows-transfer-button span:nth-child(2),.promotion-transfer-button span:nth-child(2){display:grid;min-width:0}
+.windows-transfer-button b,.promotion-transfer-button b{overflow:hidden;font-size:15px;letter-spacing:.01em;text-overflow:ellipsis;white-space:nowrap}
+.windows-transfer-button>i,.promotion-transfer-button>i{font-size:22px;font-style:normal;color:rgba(255,255,255,.6)}
+.windows-transfer-state,.promotion-transfer-state{display:flex;min-width:0;align-items:center;gap:6px;padding:0 3px;color:#8b8d91;font-size:11px;font-weight:650;white-space:nowrap}
+.windows-transfer-state span,.promotion-transfer-state span,.drive-dot{width:8px;height:8px;flex:0 0 auto;border-radius:99px;background:#c8c9cc;display:inline-block}
+.promotion-transfer-state.ready{color:#705600}.promotion-transfer-state.ready span{background:#e9b929;box-shadow:0 0 0 4px rgba(233,185,41,.12)}
 .windows-transfer-state.sent{color:#278153}.windows-transfer-state.sent span,.drive-dot.online{background:#2eb875;box-shadow:0 0 0 4px rgba(46,184,117,.12)}
 .windows-transfer-state.dirty{color:#a56b00}.windows-transfer-state.dirty span{background:#f0b429;box-shadow:0 0 0 4px rgba(240,180,41,.12)}
 .windows-transfer-state.failed{color:#c94a4a}.windows-transfer-state.failed span{background:#e55c5c}
@@ -87,5 +90,5 @@
   .transfer-summary-grid{padding:14px 14px 10px;gap:6px}.transfer-summary-grid>div{padding:11px 5px;border-radius:14px}.transfer-summary-grid b{font-size:16px}
   .transfer-package-card,.transfer-warning,.transfer-ready,.transfer-error,.drive-connection-row{margin-left:14px;margin-right:14px}
   .transfer-actions{padding-left:14px;padding-right:14px}
-  .windows-transfer-button{grid-template-columns:34px 1fr auto;padding:8px 10px}.windows-transfer-icon{width:34px;height:34px}
+  .transfer-launch-card{gap:6px}.windows-transfer-button,.promotion-transfer-button{grid-template-columns:30px minmax(0,1fr) auto;gap:7px;padding:8px}.windows-transfer-icon,.promotion-transfer-icon{width:30px;height:30px;border-radius:9px;font-size:15px}.windows-transfer-button b,.promotion-transfer-button b{font-size:11px}.windows-transfer-state,.promotion-transfer-state{gap:4px;font-size:9px}
 }
