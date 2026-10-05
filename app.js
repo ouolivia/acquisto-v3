@@ -1,11 +1,14 @@
 const STORE_KEY = 'procure-easy-data-v3';
+const STORE_BACKUP_KEY = 'procure-easy-data-v3-backup';
+const DRAFT_KEY = 'procure-easy-draft-v3';
 const PHOTO_RENDER_VERSION = 10;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
 const state = loadState();
-let screen = 'home';
-let activeBatchId = null;
-let draft = freshDraft();
+const recoveredSession = loadDraftCheckpoint();
+let activeBatchId = recoveredSession&&state.batches.some(batch=>batch.id===recoveredSession.activeBatchId)?recoveredSession.activeBatchId:null;
+let screen = activeBatchId?'entry':'home';
+let draft = activeBatchId?{...freshDraft(),...recoveredSession.draft,photoBlob:null,photoUrl:''}:freshDraft();
 let modal = null;
 let lastRenderedScreen = null;
 let detailSearchTerm = '';
@@ -18,6 +21,8 @@ let transferPreviewCache = null;
 let transferPackageCache = null;
 let editSavePending = false;
 let editSavePhotoError = '';
+let draftCheckpointTimer = 0;
+let storageSaveError = '';
 const detailPhotoUrls = new Map();
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
@@ -38,8 +43,52 @@ function setModelPromoted(batch,model,promoted,oldModel=''){
 function isPackageUnit(unit){ return unit==='pack'||unit==='hand'; }
 function packageUnitLabel(unit){ return unit==='hand'?'手':'包'; }
 function isLegacyAutomaticNote(note){return /^\d+(?:[.,]\d+)?pz\/(?:件|包|手)$/.test(String(note||'').trim());}
-function loadState(){ try{ const x=JSON.parse(localStorage.getItem(STORE_KEY)); if(x&&Array.isArray(x.batches)){let changed=false;x.batches.forEach(batch=>batch.lines?.forEach(line=>{if(isLegacyAutomaticNote(line.note)){line.note='';changed=true;}}));if(changed)localStorage.setItem(STORE_KEY,JSON.stringify(x));return {...x,colors:Array.isArray(x.colors)?x.colors:DEFAULT_COLORS};} }catch(e){} return {batches:[],colors:[...DEFAULT_COLORS]}; }
-function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
+function parseStoredState(raw){try{const value=JSON.parse(raw);return value&&Array.isArray(value.batches)?value:null;}catch(error){return null;}}
+function loadState(){
+  const primary=parseStoredState(localStorage.getItem(STORE_KEY));
+  const backup=parseStoredState(localStorage.getItem(STORE_BACKUP_KEY));
+  const x=primary||backup;
+  if(x){
+    let changed=false;
+    x.batches.forEach(batch=>batch.lines?.forEach(line=>{if(isLegacyAutomaticNote(line.note)){line.note='';changed=true;}}));
+    const normalized={...x,colors:Array.isArray(x.colors)?x.colors:[...DEFAULT_COLORS]};
+    if(!primary||changed){try{localStorage.setItem(STORE_KEY,JSON.stringify(normalized));}catch(error){}}
+    return normalized;
+  }
+  return {batches:[],colors:[...DEFAULT_COLORS]};
+}
+function reportStorageError(error){
+  storageSaveError=error?.name==='QuotaExceededError'?'设备存储空间不足，采购数据暂时未能保存':'采购数据保存失败';
+  console.error(storageSaveError,error);
+  setTimeout(()=>{if(document.querySelector('#toast'))toast(`${storageSaveError}，请勿关闭页面并立即导出备份`);},0);
+}
+function save(){
+  try{
+    const serialized=JSON.stringify(state),previous=localStorage.getItem(STORE_KEY);
+    if(previous&&parseStoredState(previous))localStorage.setItem(STORE_BACKUP_KEY,previous);
+    localStorage.setItem(STORE_KEY,serialized);
+    if(!previous)localStorage.setItem(STORE_BACKUP_KEY,serialized);
+    storageSaveError='';return true;
+  }catch(error){reportStorageError(error);return false;}
+}
+function loadDraftCheckpoint(){
+  try{
+    const value=JSON.parse(localStorage.getItem(DRAFT_KEY));
+    if(!value||!value.activeBatchId||!value.draft)return null;
+    return value;
+  }catch(error){return null;}
+}
+function draftCheckpointPayload(){
+  const {photoBlob,photoUrl,...safeDraft}=draft;
+  return {activeBatchId,screen:'entry',draft:safeDraft,updatedAt:Date.now(),hadUnsavedPhoto:Boolean(photoBlob)};
+}
+function saveDraftCheckpoint(){
+  clearTimeout(draftCheckpointTimer);
+  if(screen!=='entry'||!activeBatchId){try{localStorage.removeItem(DRAFT_KEY);}catch(error){}return;}
+  try{localStorage.setItem(DRAFT_KEY,JSON.stringify(draftCheckpointPayload()));}catch(error){reportStorageError(error);}
+}
+function scheduleDraftCheckpoint(){clearTimeout(draftCheckpointTimer);draftCheckpointTimer=setTimeout(saveDraftCheckpoint,120);}
+function clearDraftCheckpoint(){clearTimeout(draftCheckpointTimer);try{localStorage.removeItem(DRAFT_KEY);}catch(error){}}
 function esc(v){ return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function pricePending(v){ return v===null||v===''||typeof v==='undefined'; }
 function money(v){ return pricePending(v)?'待定':Number(v).toFixed(2); }
@@ -142,6 +191,7 @@ function render(){
   if(screen==='details') app.innerHTML=detailsView();
   if(modal) app.insertAdjacentHTML('beforeend',modalView());
   bind();
+  if(screen==='entry'&&activeBatchId)scheduleDraftCheckpoint();
   if(screenChanged)requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'auto'}));
   lastRenderedScreen=screen;
 }
@@ -277,6 +327,7 @@ function modalView(){
 function syncDraft(){
   for(const [id,key] of [['model','model'],['cost','cost'],['sale','sale'],['packSize','packSize'],['qty','qty'],['note','note']]){const el=document.querySelector('#'+id);if(el)draft[key]=el.value.trim();}
   const promoted=document.querySelector('#promoted');if(promoted)draft.promoted=promoted.checked;
+  scheduleDraftCheckpoint();
 }
 function persistDraftNote(){
   syncDraft();const b=getBatch();if(!b||!draft.model)return [];
@@ -425,7 +476,10 @@ function bind(){
   const applySuggestedSale=()=>{const suggestion=suggestedSale(cost?.value);if(sale)sale.value=suggestion;draft.cost=cost?.value.trim()||'';draft.sale=suggestion;updateGrossMargin();};
   if(cost){cost.oninput=applySuggestedSale;cost.onchange=applySuggestedSale;}
   if(sale)sale.oninput=updateGrossMargin;
-  if(note)note.oninput=()=>{draft.note=note.value;};
+  if(note)note.oninput=()=>{draft.note=note.value;scheduleDraftCheckpoint();};
+  for(const input of [document.querySelector('#model'),cost,sale,document.querySelector('#packSize'),document.querySelector('#qty')].filter(Boolean)){
+    input.addEventListener('input',()=>{syncDraft();scheduleDraftCheckpoint();});
+  }
   if(cost)cost.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();syncDraft();sale?.focus();}};
   if(sale)sale.onblur=()=>{draft.sale=normalizeSale(sale.value);sale.value=draft.sale;updateGrossMargin();};
 }
@@ -436,12 +490,12 @@ async function completeCurrentModel(){
   catch(error){toast(error.message||'图片保存失败');return false;}
   setModelPromoted(batch,draft.model,draft.promoted,draft.originalModel);
   markTransferDirty(batch);save();
-  releaseDraftPhoto();draft=freshDraft();render();setTimeout(()=>document.querySelector('#model')?.focus(),0);toast('图片已保存，可以输入下一个型号');return true;
+  releaseDraftPhoto();draft=freshDraft();render();saveDraftCheckpoint();setTimeout(()=>document.querySelector('#model')?.focus(),0);toast('图片已保存，可以输入下一个型号');return true;
 }
 
 async function action(name){
   if(name==='start'){const supplier=document.querySelector('#supplier').value.trim(),supplierAbbr=document.querySelector('#supplierAbbr').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,supplierAbbr,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;colorManageMode=false;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
-  if(name==='back-home'||name==='home-from-details'){if(!draft.editIds.length)persistDraftNote();colorManageMode=false;releaseDraftPhoto();revokeDetailThumbnails();draft=freshDraft();screen='home';activeBatchId=null;render();}
+  if(name==='back-home'||name==='home-from-details'){if(!draft.editIds.length)persistDraftNote();colorManageMode=false;releaseDraftPhoto();revokeDetailThumbnails();draft=freshDraft();screen='home';activeBatchId=null;clearDraftCheckpoint();render();}
   if(name==='details'){if(!draft.editIds.length){const lines=persistDraftNote();if(draft.model&&lines.length){try{await saveAndRenderModelPhoto(getBatch(),draft.model,draft.photoBlob,draft.originalModel);}catch(error){}}}colorManageMode=false;screen='details';render();await loadDetailThumbnails(getBatch(),true);}
   if(name==='continue'){screen='entry';render();}
   if(name==='take-photo'){document.querySelector('#photoInput')?.click();}
@@ -459,7 +513,7 @@ async function action(name){
   if(name==='toggle-stores'){syncDraft();draft.selfRestock=false;const visibleSelected=draft.stores.filter(n=>STORES.includes(n));draft.stores=visibleSelected.length===STORES.length?draft.stores.filter(n=>!STORES.includes(n)):[...new Set([...draft.stores,...STORES])];render();}
   if(name==='edit-all-stores'){syncDraft();const modelStores=[...new Set(getBatch().lines.filter(line=>line.model===draft.model&&STORES.includes(line.store)).map(line=>line.store))].sort((a,z)=>a-z);draft.editAll=true;draft.stores=modelStores;render();toast('已选择该型号的全部门店');}
   if(name==='continue-edit'){if(editSavePending)return;modal=null;render();toast('可以继续修改');}
-  if(name==='finish-edit'){if(editSavePending)return;modal=null;releaseDraftPhoto();draft=freshDraft();screen='details';render();await loadDetailThumbnails(getBatch(),true);toast('型号修改已完成');}
+  if(name==='finish-edit'){if(editSavePending)return;modal=null;releaseDraftPhoto();draft=freshDraft();screen='details';clearDraftCheckpoint();render();await loadDetailThumbnails(getBatch(),true);toast('型号修改已完成');}
   if(name==='allocate'){
     if(editSavePending)return;
     const editing=draft.editIds.length>0;
@@ -1085,13 +1139,18 @@ function jpegPagesToPdf(dataUrls,w,h){
 }
 
 if('serviceWorker' in navigator){
-  let refreshing=false;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(refreshing)return;
-    refreshing=true;
-    location.reload();
+    if(screen==='entry'){
+      syncDraft();saveDraftCheckpoint();
+      toast('新版本已下载；当前录入已保护，完成后重新打开即可更新');
+    }
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=38',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=39',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
+window.addEventListener('pagehide',()=>{if(screen==='entry'){syncDraft();saveDraftCheckpoint();}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&screen==='entry'){syncDraft();saveDraftCheckpoint();}});
+window.addEventListener('error',()=>{if(screen==='entry'){syncDraft();saveDraftCheckpoint();}});
+window.addEventListener('unhandledrejection',()=>{if(screen==='entry'){syncDraft();saveDraftCheckpoint();}});
 render();
+if(recoveredSession&&activeBatchId)setTimeout(()=>toast(recoveredSession.hadUnsavedPhoto?'已恢复崩溃前的录入内容；照片请重新拍摄':'已恢复崩溃前的录入内容'),350);
 setTimeout(()=>upgradeStoredPhotoDisplays(),300);
