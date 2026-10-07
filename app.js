@@ -1,6 +1,7 @@
 const STORE_KEY = 'procure-easy-data-v3';
 const STORE_BACKUP_KEY = 'procure-easy-data-v3-backup';
 const DRAFT_KEY = 'procure-easy-draft-v3';
+const IMPORT_JOURNAL_KEY = 'procure-easy-import-v3';
 const PHOTO_RENDER_VERSION = 10;
 const DEFAULT_COLORS = ['-1','-2','-13','nero','bianco','黑','白'];
 const STORES = [1,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,19];
@@ -29,6 +30,10 @@ const detailPhotoUrls = new Map();
 let allProductsThumbnailObserver = null;
 let allProductsThumbnailQueue = [];
 let allProductsThumbnailLoading = false;
+let backupSession = null;
+let backupDownloadUrl = '';
+let importSession = null;
+let importRecoveryPromise = null;
 
 function today(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -247,13 +252,25 @@ function homeView(){
       <button class="btn btn-primary btn-wide" data-action="start">开始录入采购</button>
     </div></section>
     <div class="section-head"><h2>历史采购</h2><span class="muted">${batches.length} 批</span></div>
-    ${batches.length?batches.map(b=>{const s=batchStats(b),t=transferStatus(b),promoted=promotedModels(b);return `<div class="batch-list-item"><div class="batch-swipe-wrap"><div class="batch-swipe-actions"><button type="button" data-delete-batch="${b.id}" aria-label="删除 ${esc(b.supplier)} ${esc(b.date)}">删除</button></div><button class="card batch btn-wide batch-swipe-content" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span><small class="batch-transfer-state ${t.key}">${esc(t.label)}</small></div><span class="arrow">›</span></button></div><button class="promotion-export-button ${promoted.length?'':'is-empty'}" data-promo-export-batch="${b.id}"><span>★</span> 导出推广产品 ZIP <small>${promoted.length} 款</small></button></div>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
     <button class="btn btn-light btn-wide all-products-entry" data-action="all-products">查看全部采购信息</button>
+    <button class="btn btn-light btn-wide all-products-entry" data-action="data-backup">全部数据备份与存储空间</button>
+    <button class="btn btn-light btn-wide all-products-entry" data-action="choose-backup-import">导入备份并合并</button>
+    <p class="muted"><small>跨设备合并：请选择另一台设备导出的同一份备份的全部 ZIP 分卷，无需解压。</small></p>
+    <input id="backupImportFiles" type="file" accept=".zip,application/zip" multiple hidden>
+    ${batches.length?batches.map(b=>{const s=batchStats(b),t=transferStatus(b),promoted=promotedModels(b);return `<div class="batch-list-item"><div class="batch-swipe-wrap"><div class="batch-swipe-actions"><button type="button" data-delete-batch="${b.id}" aria-label="删除 ${esc(b.supplier)} ${esc(b.date)}">删除</button></div><button class="card batch btn-wide batch-swipe-content" data-open="${b.id}" style="text-align:left"><div class="batch-main"><b>${esc(b.supplier)} <em>${esc(b.date)}</em></b><span>总金额：${s.hasPendingCost?'待定':`€${euro(s.amount)}`}　款式：${s.models}　总件数：${s.pieces}</span><small class="batch-transfer-state ${t.key}">${esc(t.label)}</small></div><span class="arrow">›</span></button></div><button class="promotion-export-button ${promoted.length?'':'is-empty'}" data-promo-export-batch="${b.id}"><span>★</span> 导出推广产品 ZIP <small>${promoted.length} 款</small></button></div>`}).join(''):`<div class="card empty"><div class="empty-icon">🧾</div>还没有采购记录<br><small>新建后，数据会自动保存在本机</small></div>`}
   </div>`;
 }
 
 function allProductItems(){
-  return [...state.batches].sort((a,b)=>b.createdAt-a.createdAt).flatMap(batch=>modelDetailGroups(batch,'input').map(item=>({batchId:batch.id,supplier:batch.supplier,date:batch.date,model:item.model,cost:item.cost,sale:item.sale})));
+  return [...state.batches].sort((a,b)=>b.createdAt-a.createdAt).flatMap(batch=>{
+    const models=new Map();
+    for(const item of batch.lines||[])if(!models.has(item.model))models.set(item.model,{batchId:batch.id,supplier:batch.supplier,date:batch.date,model:item.model,cost:item.cost,sale:item.sale});
+    return [...models.values()];
+  });
+}
+function allProductMatches(item,query){
+  const q=String(query||'').trim().toLowerCase();
+  return !q||[item.model,item.supplier].some(value=>String(value||'').toLowerCase().includes(q));
 }
 
 function allProductsView(){
@@ -311,6 +328,12 @@ function detailsView(){
 }
 
 function modalView(){
+  if(modal.type==='backup-import')return importBackupView();
+  if(modal.type==='data-backup')return backupView();
+  if(modal.type==='all-product-viewer'){
+    const item=modal.items[modal.index];
+    return `<div class="modal-backdrop centered-modal detail-photo-backdrop"><section class="modal detail-photo-modal" role="dialog" aria-modal="true" aria-label="采购图片浏览"><header><div><small>${esc(item.supplier)} · ${modal.index+1} / ${modal.items.length}</small><h2>${esc(item.model)}</h2></div><button data-action="close-modal" aria-label="关闭图片">×</button></header><div class="all-photo-stage" data-photo-swipe>${modal.loading?'<p>正在读取图片…</p>':modal.url?`<img src="${modal.url}" alt="${esc(item.model)} 产品大图" draggable="false">`:`<p>${esc(modal.error||'该型号暂时没有照片')}</p>`}</div><div class="all-photo-navigation"><button class="btn btn-light" data-action="previous-product-photo" ${modal.index===0?'disabled':''}>‹ 上一张</button><button class="btn btn-light" data-action="next-product-photo" ${modal.index===modal.items.length-1?'disabled':''}>下一张 ›</button></div><button class="btn btn-primary" data-action="close-modal">关闭</button></section></div>`;
+  }
   if(modal.type==='detail-photo') return `<div class="modal-backdrop centered-modal detail-photo-backdrop"><section class="modal detail-photo-modal" role="dialog" aria-modal="true" aria-label="${esc(modal.model)} 产品图片"><header><div><small>产品图片</small><h2>${esc(modal.model)}</h2></div><button data-action="close-modal" aria-label="关闭图片">×</button></header><img src="${modal.url}" alt="${esc(modal.model)} 产品大图"><button class="btn btn-primary" data-action="close-modal">关闭</button></section></div>`;
   if(modal.type==='photo-gallery'){
     const selected=modal.selected||new Set(),filter=modal.filter||'pending';
@@ -410,12 +433,22 @@ function applyAllProductsFilter(){
   const input=document.querySelector('#allProductsSearch');if(!input)return;
   allProductsSearchTerm=input.value;
   let visible=0;
-  document.querySelectorAll('[data-all-product-item]').forEach(el=>{el.hidden=!fuzzyMatch(el.dataset.allProductItem,allProductsSearchTerm);if(!el.hidden)visible++;});
+  const items=allProductItems(),matched=new Set(items.filter(item=>allProductMatches(item,allProductsSearchTerm)).map(item=>photoCacheKey(item.batchId,item.model)));
+  document.querySelectorAll('[data-all-product-item]').forEach(el=>{el.hidden=!matched.has(el.querySelector('[data-all-product-photo]')?.dataset.allProductPhoto);if(!el.hidden)visible++;});
   const empty=document.querySelector('.all-products-no-result');if(empty)empty.hidden=visible>0||!allProductsSearchTerm.trim();
   loadAllProductThumbnails();
 }
 
 function bind(){
+  const backupFiles=document.querySelector('#backupImportFiles');
+  if(backupFiles)backupFiles.onchange=()=>{const files=Array.from(backupFiles.files||[]);backupFiles.value='';if(files.length)previewBackupImport(files);};
+  const swipe=document.querySelector('[data-photo-swipe]');
+  if(swipe){
+    let start=null;
+    swipe.onpointerdown=e=>{start={x:e.clientX,y:e.clientY};swipe.setPointerCapture?.(e.pointerId);};
+    swipe.onpointerup=e=>{if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.4)changeProductPhoto(dx<0?1:-1);};
+    swipe.onpointercancel=()=>{start=null;};
+  }
   document.querySelectorAll('[data-unit]').forEach(x=>x.onclick=()=>{
     syncDraft();
     if(x.dataset.unit==='piece'){
@@ -480,13 +513,11 @@ function bind(){
   document.querySelectorAll('[data-sale-step]').forEach(x=>x.onclick=()=>{const sale=document.querySelector('#sale'),cost=document.querySelector('#cost');if(!sale)return;sale.value=stepSale(sale.value,Number(x.dataset.saleStep),cost?.value);draft.sale=sale.value;const output=document.querySelector('#grossMargin');if(output)output.textContent=grossMarginDisplay(cost?.value,sale.value);});
   document.querySelectorAll('[data-store]').forEach(x=>x.onclick=()=>{syncDraft();const n=Number(x.dataset.store);draft.stores=draft.stores.includes(n)?draft.stores.filter(v=>v!==n):[...draft.stores,n];if(draft.editIds.length)draft.editAll=false;render();});
   document.querySelectorAll('[data-open]').forEach(x=>x.onclick=async()=>{if(Date.now()<suppressBatchOpenUntil)return;activeBatchId=x.dataset.open;detailSearchTerm='';screen='details';render();await loadDetailThumbnails(getBatch());});
-  document.querySelectorAll('[data-all-product-photo]').forEach(x=>x.onclick=async e=>{
+  document.querySelectorAll('[data-all-product-photo]').forEach(x=>x.onclick=e=>{
     e.stopPropagation();
-    try{
-      const record=await V3Photos.get(x.dataset.allProductBatch,x.dataset.allProductModel),blob=record?.sourceBlob||record?.renderedBlob;
-      if(!blob)return toast('该型号暂时没有照片');
-      modal={type:'detail-photo',model:x.dataset.allProductModel,url:URL.createObjectURL(blob),ownsUrl:true};render();
-    }catch(error){toast('照片读取失败，请稍后重试');}
+    const items=allProductItems().filter(item=>allProductMatches(item,allProductsSearchTerm)),index=items.findIndex(item=>photoCacheKey(item.batchId,item.model)===x.dataset.allProductPhoto);
+    if(index<0)return;
+    modal={type:'all-product-viewer',items,index,url:'',loading:true,request:0};loadProductPhoto();
   });
   document.querySelectorAll('[data-promo-export-batch]').forEach(x=>x.onclick=()=>exportPromotionZip(state.batches.find(batch=>batch.id===x.dataset.promoExportBatch)));
   document.querySelectorAll('[data-delete-batch]').forEach(x=>x.onclick=async()=>{
@@ -576,6 +607,13 @@ async function completeCurrentModel(){
 }
 
 async function action(name){
+  if(name==='choose-backup-import'){document.querySelector('#backupImportFiles')?.click();return;}
+  if(name==='confirm-backup-import'){await commitBackupImport();return;}
+  if(name==='data-backup'){await openDataBackup();return;}
+  if(name==='prepare-backup-part'){await prepareBackupPart();return;}
+  if(name==='next-backup-part'){if(backupSession){releaseBackupDownload();backupSession.part++;await prepareBackupPart();}return;}
+  if(name==='previous-product-photo'){await changeProductPhoto(-1);return;}
+  if(name==='next-product-photo'){await changeProductPhoto(1);return;}
   if(name==='start'){const supplier=document.querySelector('#supplier').value.trim(),supplierAbbr=document.querySelector('#supplierAbbr').value.trim();const date=document.querySelector('#date').value;if(!supplier)return toast('请填写供应商名称');const b={id:uid(),supplier,supplierAbbr,date:date||today(),createdAt:Date.now(),lines:[]};state.batches.push(b);activeBatchId=b.id;colorManageMode=false;releaseDraftPhoto();draft=freshDraft();save();V3Photos.requestPersistence();screen='entry';render();}
   if(name==='all-products'){allProductsSearchTerm='';screen='all-products';render();await loadAllProductThumbnails();}
   if(name==='all-products-home'){revokeDetailThumbnails();screen='home';render();}
@@ -588,7 +626,7 @@ async function action(name){
   if(name==='toggle-self-restock'){syncDraft();draft.selfRestock=!draft.selfRestock;if(draft.selfRestock)draft.stores=[];render();toast(draft.selfRestock?'已开启门店自行补货':'已恢复门店分配');}
   if(name==='edit-colors'){syncDraft();modal={type:'edit-colors'};render();setTimeout(()=>document.querySelector('[data-color-original]')?.focus(),0);}
   if(name==='sort-colors'){syncDraft();modal={type:'sort-colors',order:[...state.colors],selected:null};render();}
-  if(name==='close-modal'){revokeGalleryUrls();revokeModalPhotoUrl();modal=null;render();}
+  if(name==='close-modal'){if(['data-backup','backup-import'].includes(modal?.type)&&modal.busy)return;revokeGalleryUrls();revokeModalPhotoUrl();if(modal?.type==='data-backup'){releaseBackupDownload();backupSession=null;}if(modal?.type==='backup-import')importSession=null;modal=null;render();}
   if(name==='save-color'){const c=normalizeColorInput(document.querySelector('#newColor').value);if(!c)return toast('请输入颜色');if(!state.colors.includes(c))state.colors.push(c);if(!draft.colors.includes(c))draft.colors.push(c);colorCategory=isCodeColor(c)?'number':'text';save();modal=null;render();toast('颜色已增加');}
   if(name==='quick-add-color'){syncDraft();const input=document.querySelector('#quickColor'),c=normalizeColorInput(input?.value);if(!c)return toast('请输入颜色');if(state.colors.includes(c))return toast('这个颜色已经存在');state.colors.push(c);draft.colors=[...new Set([...draft.colors,c])];colorCategory=isCodeColor(c)?'number':'text';save();render();toast(`已增加并选中 ${colorEntryLabel(c)}`);}
   if(name==='finish-color-manage'){syncDraft();colorManageMode=false;render();toast('颜色顺序已保存');}
@@ -884,8 +922,133 @@ function revokeGalleryUrls(){
 }
 function revokeModalPhotoUrl(){
   if(modal?.type==='detail-photo'&&modal.ownsUrl&&modal.url)URL.revokeObjectURL(modal.url);
+  if(modal?.type==='all-product-viewer'&&modal.url){URL.revokeObjectURL(modal.url);modal.url='';}
+}
+async function changeProductPhoto(delta){
+  if(modal?.type!=='all-product-viewer')return;
+  const next=modal.index+delta;if(next<0||next>=modal.items.length)return;
+  revokeModalPhotoUrl();modal.index=next;await loadProductPhoto();
+}
+async function loadProductPhoto(){
+  const viewer=modal,request=++viewer.request,item=viewer.items[viewer.index];
+  viewer.loading=true;viewer.error='';render();
+  try{
+    const record=await V3Photos.get(item.batchId,item.model);
+    if(modal!==viewer||viewer.request!==request)return;
+    const blob=record?.sourceBlob||record?.renderedBlob;
+    viewer.url=blob?URL.createObjectURL(blob):'';
+  }catch(error){if(modal===viewer&&viewer.request===request)viewer.error='照片读取失败，请切换后重试';}
+  if(modal===viewer&&viewer.request===request){viewer.loading=false;render();}
+}
+
+function releaseBackupDownload(){if(backupDownloadUrl)URL.revokeObjectURL(backupDownloadUrl);backupDownloadUrl='';}
+function backupView(){
+  const m=modal,s=backupSession,fmt=V3Drive.formatBytes;
+  return `<div class="modal-backdrop centered-modal"><section class="modal backup-modal" role="dialog" aria-modal="true" aria-label="全部数据备份"><header class="section-head"><h2>全部数据备份</h2><button data-action="close-modal" ${m.busy?'disabled':''} aria-label="关闭备份">×</button></header><p>采购记录保存在本机浏览器的网站数据中，照片保存在网站图片数据库中，平时不会显示在手机“文件”里。</p>${s?`<div class="backup-storage"><p>采购数据及本机备份：<b>${fmt(s.textBytes)}</b></p><p>原始照片：<b>${fmt(s.sourceBytes)}</b> · 生成图片：<b>${fmt(s.renderedBytes)}</b></p><p>${s.state.batches.length} 批采购 · ${s.inventory.length} 条照片记录</p><p>浏览器报告的本站点空间：${s.storage?`${fmt(s.storage.usage)} / 配额 ${fmt(s.storage.quota)}`:'当前浏览器未提供'}</p><small>浏览器用量可能包含同一域名其他应用及缓存；配额不等于手机剩余空间。</small></div><p>完整备份包含全部采购记录、颜色、推广标记、草稿、原始照片和生成图片。共 ${s.parts.length} 卷，请依次保存所有 ZIP。</p>`:''}<p role="status" id="backup-progress">${esc(m.message||'正在统计存储空间…')}</p>${m.error?`<p class="backup-error">${esc(m.error)}</p>`:''}${backupDownloadUrl?`<a class="btn btn-primary btn-wide" href="${backupDownloadUrl}" download="${esc(m.filename)}">保存第 ${s.part+1} / ${s.parts.length} 卷 ZIP</a><p>请在下载菜单或分享菜单中保存到“文件”或 iCloud，并确认文件已保存。</p>${s.part+1<s.parts.length?'<button class="btn btn-light btn-wide" data-action="next-backup-part">本卷已保存，准备下一卷</button>':'<p>这是最后一卷。请确认全部分卷均已保存。</p>'}`:s&&!m.busy?'<button class="btn btn-primary btn-wide" data-action="prepare-backup-part">生成完整备份</button>':''}<button class="btn btn-light btn-wide" data-action="close-modal" ${m.busy?'disabled':''}>关闭</button></section></div>`;
+}
+async function openDataBackup(){
+  releaseBackupDownload();backupSession=null;
+  const dialog={type:'data-backup',busy:true,message:'正在统计存储空间…'};modal=dialog;render();
+  try{
+    await importRecoveryPromise;
+    const snapshot=JSON.parse(JSON.stringify(state)),draftSnapshot=loadDraftCheckpoint(),recoveryState=parseStoredState(localStorage.getItem(STORE_BACKUP_KEY));
+    const inventory=await V3Photos.inventory();
+    const storage=await V3Photos.storageInfo().catch(()=>null);
+    const textBytes=[STORE_KEY,STORE_BACKUP_KEY,DRAFT_KEY].reduce((sum,key)=>sum+new Blob([localStorage.getItem(key)||'']).size,0);
+    backupSession={id:uid(),createdAt:new Date().toISOString(),state:snapshot,draft:draftSnapshot,recoveryState,inventory,parts:V3Backup.plan(inventory),part:0,storage,textBytes,sourceBytes:inventory.reduce((sum,r)=>sum+r.sourceSize,0),renderedBytes:inventory.reduce((sum,r)=>sum+r.renderedSize,0)};
+    dialog.message='准备完成。大批量照片会按约 48 MB 分卷，逐卷生成和保存。';
+  }catch(error){dialog.error=error.message||'存储空间读取失败，请稍后重试';}
+  dialog.busy=false;if(modal===dialog)render();
+}
+async function prepareBackupPart(){
+  const s=backupSession,dialog=modal;if(!s||dialog?.type!=='data-backup'||dialog.busy)return;
+  dialog.busy=true;dialog.error='';dialog.message=`正在生成第 ${s.part+1} / ${s.parts.length} 卷，请保持页面开启…`;render();
+  try{
+    const blob=await V3Backup.createPart(s,s.part,V3Photos,(done,total)=>{const el=document.querySelector('#backup-progress');if(el)el.textContent=`第 ${s.part+1} / ${s.parts.length} 卷：照片 ${done} / ${total}`;});
+    releaseBackupDownload();backupDownloadUrl=URL.createObjectURL(blob);
+    dialog.filename=`采易单全部备份_${s.createdAt.slice(0,10)}_${s.id}_${s.part+1}of${s.parts.length}.zip`;
+    dialog.message=`第 ${s.part+1} 卷已生成（${V3Drive.formatBytes(blob.size)}），请点击下面按钮保存。`;
+  }catch(error){dialog.error=error.message||'备份失败，请重试';dialog.message='本卷尚未完成，请重试。';}
+  dialog.busy=false;if(modal===dialog)render();
 }
 function photoCacheKey(batchId,model){return `${batchId}\u001f${model}`;}
+function importBackupView(){
+  const m=modal,plan=importSession?.plan;
+  return `<div class="modal-backdrop centered-modal"><section class="modal backup-modal" role="dialog" aria-modal="true" aria-label="导入备份并合并"><header class="section-head"><h2>导入备份并合并</h2><button data-action="close-modal" aria-label="关闭导入" ${m.busy?'disabled':''}>×</button></header><p role="status" id="import-progress">${esc(m.message)}</p>${m.error?`<p class="backup-error">${esc(m.error)}</p>`:''}${plan&&!m.complete?`<div class="backup-storage"><p>新增 <b>${plan.additions.length}</b> 批采购 · <b>${plan.photoCount}</b> 条照片记录</p><p>已存在或已导入：${plan.skipped} 批，自动跳过</p>${plan.conflicts?`<p>${plan.conflicts} 批与本机编号或供应商日期相同，将另外新增，保留双方记录。</p>`:''}${plan.orphanPhotos?`<p>${plan.orphanPhotos} 条照片没有对应采购批次，将保留在原备份文件中。</p>`:''}</div><div class="import-batch-list">${plan.additions.map(a=>`<p><b>${esc(a.batch.supplier)}</b> · ${esc(a.batch.date)} · ${new Set(a.batch.lines.map(l=>l.model)).size} 款</p>`).join('')}</div><p>本机原有采购和当前录入草稿保持原样。备份草稿另存归档，发送状态重置为未发送。</p>${plan.additions.length&&!m.error?`<button class="btn btn-primary btn-wide" data-action="confirm-backup-import" ${m.busy?'disabled':''}>确认合并 ${plan.additions.length} 批采购</button>`:''}`:''}<button class="btn btn-light btn-wide" data-action="close-modal" ${m.busy?'disabled':''}>${m.complete?'完成':'关闭'}</button></section></div>`;
+}
+async function previewBackupImport(files){
+  importSession=null;const dialog={type:'backup-import',busy:true,message:'正在读取并校验备份，请保持页面开启…'};modal=dialog;render();
+  try{
+    await importRecoveryPromise;
+    await recoverPendingImport();
+    const baseline=localStorage.getItem(STORE_KEY);
+    if(baseline&&JSON.stringify(parseStoredState(baseline))!==JSON.stringify(state))throw new Error('本机采购已在其他页面更新，请重新打开应用后导入');
+    const imported=await V3Backup.inspect(files,(part,total)=>{const el=document.querySelector('#import-progress');if(el)el.textContent=`正在校验第 ${part} / ${total} 个文件和照片…`;});
+    const plan=await V3Backup.mergePlan(imported,state,V3Photos,()=>`import-${crypto.randomUUID()}`);
+    importSession={imported,plan,baseline};
+    dialog.message=plan.additions.length?'备份校验通过，请核对以下采购批次。':'这些采购已经存在，无需重复导入。';
+  }catch(error){dialog.error=error.message||'备份读取失败';dialog.message='尚未导入任何数据。请选择同一份备份的全部原始 ZIP 分卷。';}
+  dialog.busy=false;if(modal===dialog)render();
+}
+async function recoverPendingImport(){
+  return withImportLock(recoverPendingImportUnlocked);
+}
+async function withImportLock(work){
+  if(navigator.locks?.request)return navigator.locks.request('caiyidan-v3-import',{mode:'exclusive'},work);
+  return work();
+}
+async function recoverPendingImportUnlocked(){
+  const raw=localStorage.getItem(IMPORT_JOURNAL_KEY);if(!raw)return;
+  const journal=JSON.parse(raw);
+  if(typeof journal.token!=='string'||!journal.token.startsWith('merge-'))throw new Error('未完成的导入标记无法读取');
+  const stored=parseStoredState(localStorage.getItem(STORE_KEY));
+  if(stored?.lastImportToken!==journal.token){
+    if(!navigator.locks?.request&&Date.now()-(journal.updatedAt||0)<300000)throw new Error('另一个页面可能正在导入，请关闭其他页面并在 5 分钟后重试');
+    await V3Photos.removeImport(journal.token);
+  }
+  localStorage.removeItem(IMPORT_JOURNAL_KEY);
+}
+async function commitBackupImport(){
+  return withImportLock(commitBackupImportUnlocked);
+}
+async function commitBackupImportUnlocked(){
+  const session=importSession,dialog=modal;
+  if(!session||dialog?.type!=='backup-import'||dialog.busy||!session.plan.additions.length)return;
+  dialog.busy=true;dialog.message='正在导入照片，请勿关闭页面…';dialog.error='';render();
+  const token=`merge-${crypto.randomUUID()}`;let committed=false,journalWritten=false;
+  try{
+    if(localStorage.getItem(STORE_KEY)!==session.baseline)throw new Error('本机采购已发生变化，请关闭后重新选择备份');
+    await recoverPendingImportUnlocked();
+    const journal={token,backupId:session.imported.data.backupId,updatedAt:Date.now()};
+    localStorage.setItem(IMPORT_JOURNAL_KEY,JSON.stringify(journal));journalWritten=true;
+    let done=0;
+    for(const addition of session.plan.additions){
+      for(const photo of addition.photos){
+        const {key,importToken,...metadata}=photo.metadata;
+        await V3Photos.addImported({...metadata,batchId:addition.batch.id,sourceBlob:photo.source?.blob||null,renderedBlob:photo.rendered?.blob||null,sentAt:null},token);
+        if(Date.now()-journal.updatedAt>10000){journal.updatedAt=Date.now();localStorage.setItem(IMPORT_JOURNAL_KEY,JSON.stringify(journal));}
+        const el=document.querySelector('#import-progress');if(el)el.textContent=`正在导入照片 ${++done} / ${session.plan.photoCount}…`;
+      }
+    }
+    if(localStorage.getItem(STORE_KEY)!==session.baseline)throw new Error('另一个页面修改了采购数据，请重新导入');
+    const data=session.imported.data,next={...state,batches:[...state.batches,...session.plan.additions.map(a=>a.batch)],colors:[...new Set([...state.colors,...data.state.colors])],importedBackupIds:[...new Set([...(state.importedBackupIds||[]),data.backupId])],lastImportToken:token};
+    if(data.draft)next.importedDrafts=[...(state.importedDrafts||[]),{backupId:data.backupId,importedAt:Date.now(),checkpoint:data.draft,batchIdMap:Object.fromEntries(session.plan.idMap)}];
+    // Publish metadata only after every staged image is durable. A failed write leaves the original state intact.
+    localStorage.setItem(STORE_KEY,JSON.stringify(next));committed=true;
+    Object.assign(state,next);
+    try{localStorage.removeItem(IMPORT_JOURNAL_KEY);}catch(error){}
+    revokeDetailThumbnails();
+    dialog.complete=true;dialog.message=`已合并 ${session.plan.additions.length} 批采购和 ${session.plan.photoCount} 条照片记录，跳过 ${session.plan.skipped} 批重复数据。`;
+    importSession=null;
+  }catch(error){
+    if(!committed&&journalWritten){
+      try{await V3Photos.removeImport(token);localStorage.removeItem(IMPORT_JOURNAL_KEY);}catch(cleanupError){importRecoveryPromise=null;dialog.error='导入未完成，原采购保留。请重新打开应用清理本次未完成导入后再试。';}
+    }
+    dialog.error=dialog.error||(error.name==='QuotaExceededError'?'设备空间不足，导入已取消。本机原有采购未改动，请释放空间后重新导入。':error.message||'导入失败，请重新选择备份');
+    dialog.message='未完成合并。';
+  }
+  dialog.busy=false;if(modal===dialog)render();
+}
 function removeDetailThumbnail(batchId,model){
   const key=photoCacheKey(batchId,model),url=detailPhotoUrls.get(key);
   if(url)URL.revokeObjectURL(url);
@@ -1290,7 +1453,7 @@ if('serviceWorker' in navigator){
       toast('新版本已下载；当前录入已保护，完成后重新打开即可更新');
     }
   });
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=45',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=47',{updateViaCache:'none'}).then(registration=>registration.update()).catch(()=>{}));
 }
 window.addEventListener('pagehide',()=>{if(screen==='entry'){syncDraft();saveDraftCheckpoint();}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&screen==='entry'){syncDraft();saveDraftCheckpoint();}});
@@ -1298,4 +1461,5 @@ window.addEventListener('error',()=>{if(screen==='entry'){syncDraft();saveDraftC
 window.addEventListener('unhandledrejection',()=>{if(screen==='entry'){syncDraft();saveDraftCheckpoint();}});
 render();
 if(recoveredSession&&activeBatchId)setTimeout(()=>toast(recoveredSession.hadUnsavedPhoto?'已恢复崩溃前的录入内容；照片请重新拍摄':'已恢复崩溃前的录入内容'),350);
-setTimeout(()=>upgradeStoredPhotoDisplays(),300);
+importRecoveryPromise=recoverPendingImport();
+importRecoveryPromise.then(()=>setTimeout(()=>upgradeStoredPhotoDisplays(),300)).catch(()=>setTimeout(()=>toast('未完成导入的清理失败，请重新打开后再导入'),300));

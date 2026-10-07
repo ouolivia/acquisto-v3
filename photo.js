@@ -43,6 +43,15 @@
   async function put(record){
     return transaction('readwrite',store=>store.put({...record,key:key(record.batchId,record.model),updatedAt:Date.now()}));
   }
+  async function addImported(record,importToken){
+    return transaction('readwrite',store=>store.add({...record,key:key(record.batchId,record.model),importToken,updatedAt:Date.now()}));
+  }
+  async function removeImport(importToken){
+    return transaction('readwrite',store=>{
+      const request=store.openCursor();
+      request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;if(cursor.value.importToken===importToken)cursor.delete();cursor.continue();};
+    });
+  }
   async function saveSource(batchId,model,sourceBlob){
     const current=await get(batchId,model);
     return put({...(current||{}),batchId,model,sourceBlob,renderedBlob:null,filename:'',dirty:true,sentAt:null});
@@ -110,6 +119,23 @@
       tx.oncomplete=()=>db.close();
     });
   }
+  // Read one record at a time: inventory never retains the photo blobs.
+  async function inventory(){
+    const db=await open();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readonly'),items=[];
+      const request=tx.objectStore(STORE).openCursor();
+      request.onsuccess=()=>{
+        const cursor=request.result;if(!cursor)return;
+        const {sourceBlob,renderedBlob,...metadata}=cursor.value;
+        items.push({metadata,sourceSize:sourceBlob?.size||0,sourceType:sourceBlob?.type||'',renderedSize:renderedBlob?.size||0,renderedType:renderedBlob?.type||''});
+        cursor.continue();
+      };
+      tx.oncomplete=()=>{db.close();resolve(items);};
+      tx.onerror=()=>{db.close();reject(tx.error);};
+      tx.onabort=()=>{db.close();reject(tx.error||new Error('照片目录读取失败'));};
+    });
+  }
   function loadImage(blob){
     return new Promise((resolve,reject)=>{
       const url=URL.createObjectURL(blob);
@@ -167,5 +193,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,clearRenderedCache,move,listBatch,crop,thumbnail,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,clearRenderedCache,move,listBatch,inventory,crop,thumbnail,loadImage,storageInfo,requestPersistence,addImported,removeImport};
 })();
