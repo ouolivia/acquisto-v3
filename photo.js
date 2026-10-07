@@ -80,6 +80,17 @@
     const records=await listBatch(batchId);
     await Promise.all(records.map(record=>remove(batchId,record.model)));
   }
+  async function clearRenderedCache(){
+    return transaction('readwrite',store=>{
+      const request=store.getAll();
+      request.onsuccess=()=>{
+        for(const record of request.result||[]){
+          if(!record.renderedBlob)continue;
+          store.put({...record,renderedBlob:null,filename:'',dirty:true,updatedAt:Date.now()});
+        }
+      };
+    });
+  }
   async function move(batchId,fromModel,toModel){
     if(!fromModel||fromModel===toModel)return get(batchId,toModel);
     const current=await get(batchId,fromModel);
@@ -133,7 +144,7 @@
     context.fillStyle='#fff';
     context.fillRect(0,0,canvas.width,canvas.height);
     context.drawImage(image,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);
-    return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('照片裁剪失败')),'image/jpeg',.9));
+    return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('照片裁剪失败')),'image/jpeg',.84));
   }
   async function storageInfo(){
     if(!navigator.storage?.estimate)return null;
@@ -145,5 +156,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,clearRenderedCache,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
 })();
