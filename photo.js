@@ -146,6 +146,17 @@
     context.drawImage(image,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);
     return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('照片裁剪失败')),'image/jpeg',.84));
   }
+  async function thumbnail(blob,maxSize=240){
+    const image=await loadImage(blob),width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
+    const scale=Math.min(1,Math.max(80,Number(maxSize)||240)/Math.max(width,height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(width*scale));
+    canvas.height=Math.max(1,Math.round(height*scale));
+    const context=canvas.getContext('2d',{alpha:false});
+    context.fillStyle='#f0f0f1';context.fillRect(0,0,canvas.width,canvas.height);
+    context.drawImage(image,0,0,canvas.width,canvas.height);
+    return new Promise((resolve,reject)=>canvas.toBlob(result=>result?resolve(result):reject(new Error('缩略图生成失败')),'image/jpeg',.68));
+  }
   async function storageInfo(){
     if(!navigator.storage?.estimate)return null;
     const estimate=await navigator.storage.estimate();
@@ -156,5 +167,5 @@
     try{return await navigator.storage.persist();}catch(error){return false;}
   }
 
-  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,clearRenderedCache,move,listBatch,crop,loadImage,storageInfo,requestPersistence};
+  window.V3Photos={get,saveSource,saveRendered,saveComplete,markDirty,markSent,remove,removeBatch,clearRenderedCache,move,listBatch,crop,thumbnail,loadImage,storageInfo,requestPersistence};
 })();
